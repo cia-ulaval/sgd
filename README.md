@@ -10,7 +10,7 @@
 
 ## Description du Projet
 
-Analyser et améliorer l'algorithme de Descente de Gradient Stochastique (SGD), fondamental en apprentissage automatique. Le projet combine analyse théorique des limitations existantes et développement d'une nouvelle approche incorporant du "bruit" contrôlé pour de meilleures performances d'optimisation.
+La descente de gradient stochastique (SGD) est utilisée depuis plus d'une vingtaine d'années en apprentissage automatique pour l'entraînement des modèles. Étant donné la non-convexité et la difficulté des problèmes d'optimisation pour lesquels on utilise l'algorithme SGD, ce dernier mène parfois à des résultats bien loin de l'optimalité (en d'autres mots : il peut mener à des modèles qui sont bien moins bons que ce qu'il est possible d'atteindre). Dans ce projet, nous visons l'analyse de l'algorithme SGD à travers les diverses améliorations qui lui ont été proposées au fil du temps. Par une analyse de l'espace d'optimisation, nous proposerons nous-mêmes une amélioration de l'algorithme en incorporant du "bruit" (de l'aléa) dans le processus d'optimisation. Nous croyons, à travers ce processus, pouvoir mieux expliquer les divers défis de l'algorithme SGD et les succès des améliorations qui lui ont été suggérées.
 
 ## Objectifs & Livrables
 
