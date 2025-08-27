@@ -44,7 +44,3 @@ Tu vas aimer ce projet si :
 *   Tu es passionné par les fondements mathématiques de l'intelligence artificielle
 *   Tu veux contribuer à la recherche fondamentale en apprentissage automatique
 *   Tu souhaites acquérir de l'expérience en rédaction scientifique et publication académique
-
-## Contact & Liens Utiles
-*   **Contact :** [Email de Benjamin Leblanc]
-*   **Références :** [Liens vers articles fondateurs sur le SGD]
