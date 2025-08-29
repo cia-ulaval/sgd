@@ -1,4 +1,4 @@
-# SGD - Optimisation IA 📉
+# SGD - Beyond 📉
 
 ## Fiche d'Identité
 
