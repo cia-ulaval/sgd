@@ -1,1 +1,4 @@
 1) Considerer ++ de bruit au debut de l'entrainement et qui diminue au fur et à mesure. genre 1/t ou 1/sqrt(t) ou t est epoch. Tester plusieurs paramètres.
+
+2) reduire/augmenter variance de loi normale et tester avec un graphe des performances
+
