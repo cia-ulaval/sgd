@@ -1,0 +1,82 @@
+On remarque une perte basse, mais egalement une val_acc a la baisse, ce qui pourrait indiquer un overfitting. On teste quelques configurations et ajustements.
+
+On diminue le nombre de samples.
+
+Final Loss with Laplacian noise = 0.3123, Proportional noise = FalseHidden layers = [16],  Number of samples = 8,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8765
+Final Loss with Laplacian noise = 0.2212, Proportional noise = TrueHidden layers = [16],  Number of samples = 8,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8925
+Final Loss = 0.2293, Proportional noise = FalseHidden layers = [16],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9177
+
+Final Loss with Laplacian noise = 0.2785, Proportional noise = FalseHidden layers = [16],  Number of samples = 6,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8805
+Final Loss with Laplacian noise = 0.2524, Proportional noise = TrueHidden layers = [16],  Number of samples = 6,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8942
+Final Loss = 0.3057, Proportional noise = FalseHidden layers = [16],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9200
+
+Promettant, donc on change la taille du hidden layer.
+
+Final Loss with Laplacian noise = 0.3643, Proportional noise = FalseHidden layers = [32],  Number of samples = 6,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8940
+Final Loss with Laplacian noise = 0.3329, Proportional noise = TrueHidden layers = [32],  Number of samples = 6,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9130
+Final Loss = 0.2181, Proportional noise = FalseHidden layers = [32],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9340
+Tres promettant
+
+On teste la reduction encore du nombre de samples.
+Final Loss with Laplacian noise = 0.3711, Proportional noise = FalseHidden layers = [32],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8857
+Final Loss with Laplacian noise = 0.1713, Proportional noise = TrueHidden layers = [32],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9057
+Final Loss = 0.1798, Proportional noise = FalseHidden layers = [32],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9257
+Promettant, grosse reduction de la perte. On continue, avec la reduction de la taille du hidden
+
+Final Loss with Laplacian noise = 0.3855, Proportional noise = FalseHidden layers = [16],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8842
+Final Loss with Laplacian noise = 0.4176, Proportional noise = TrueHidden layers = [16],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8992
+Final Loss = 0.3300, Proportional noise = FalseHidden layers = [16],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9155
+
+Degradation assez marquee de la perte et de la val_acc, on reprend le hidden size de 32 et on teste l'ajout d'un deuxieme hiddne layer de moitie de taille.
+
+Final Loss with Laplacian noise = 0.2482, Proportional noise = FalseHidden layers = [32, 16],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8402
+Final Loss with Laplacian noise = 0.1900, Proportional noise = TrueHidden layers = [32, 16],  Number of samples = 4,  Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.8855
+Final Loss = 0.1175, Proportional noise = FalseHidden layers = [32, 16],   Number of Epochs = 10, Learning rate = 0.01, Validation accuracy = 0.9400
+
+Bonne loss, mais val_acc baisse, surement underfit a cause du manque d'epochs.
+
+Final Loss with Laplacian noise = 0.2958, Proportional noise = FalseHidden layers = [32, 16],  Number of samples = 4,  Number of Epochs = 20, Learning rate = 0.01, Validation accuracy = 0.8917
+Final Loss with Laplacian noise = 0.3968, Proportional noise = TrueHidden layers = [32, 16],  Number of samples = 4,  Number of Epochs = 20, Learning rate = 0.01, Validation accuracy = 0.8993
+Final Loss = 0.0456, Proportional noise = FalseHidden layers = [32, 16],   Number of Epochs = 20, Learning rate = 0.01, Validation accuracy = 0.9468
+
+Augmente samples
+
+Final Loss with Laplacian noise = 0.4778, Proportional noise = FalseHidden layers = [32, 16],  Number of samples = 6,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.8632
+Final Loss with Laplacian noise = 0.7191, Proportional noise = TrueHidden layers = [32, 16],  Number of samples = 6,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.8750
+Final Loss = 0.2074, Proportional noise = FalseHidden layers = [32, 16],   Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.9423
+
+One hidden layer size 32, reduit params
+
+Final Loss with Laplacian noise = 0.2982, Proportional noise = FalseHidden layers = [32],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.8987
+Final Loss with Laplacian noise = 0.3972, Proportional noise = TrueHidden layers = [32],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.9092
+Final Loss = 0.3211, Proportional noise = FalseHidden layers = [32],   Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.9192
+
+Reduit params
+
+Final Loss with Laplacian noise = 0.2677, Proportional noise = FalseHidden layers = [16],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.8960
+Final Loss with Laplacian noise = 0.1476, Proportional noise = TrueHidden layers = [16],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.8915
+Final Loss = 0.2614, Proportional noise = FalseHidden layers = [16],   Number of Epochs = 15, Learning rate = 0.01, Validation accuracy = 0.9105
+
+Extremement bon loss. On essaie de reduire de 1e-10 le learning rate, peut etre qu'on overshoot les minima
+
+Final Loss with Laplacian noise = 1.4416, Proportional noise = FalseHidden layers = [16],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.001, Validation accuracy = 0.4890
+Final Loss with Laplacian noise = 0.8908, Proportional noise = TrueHidden layers = [16],  Number of samples = 3,  Number of Epochs = 15, Learning rate = 0.001, Validation accuracy = 0.7157
+Final Loss = 0.2758, Proportional noise = FalseHidden layers = [16],   Number of Epochs = 15, Learning rate = 0.001, Validation accuracy = 0.8893
+
+Final Loss with Laplacian noise = 0.2809, Proportional noise = FalseHidden layers = [64, 32, 16],  Number of samples = 4,  Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9020
+Final Loss with Laplacian noise = 0.0243, Proportional noise = TrueHidden layers = [64, 32, 16],  Number of samples = 4,  Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9055
+Final Loss = 0.0124, Proportional noise = FalseHidden layers = [64, 32, 16],   Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9548
+
+Final Loss with Laplacian noise = 0.2783, Proportional noise = FalseHidden layers = [64, 32, 16],  Number of samples = 5,  Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9052
+Final Loss with Laplacian noise = 0.5723, Proportional noise = TrueHidden layers = [64, 32, 16],  Number of samples = 5,  Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9208
+Final Loss = 0.0191, Proportional noise = FalseHidden layers = [64, 32, 16],   Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9543
+
+Final Loss with Laplacian noise = 0.7030, Proportional noise = FalseHidden layers = [64, 32, 16],  Number of samples = 6,  Number of Epochs = 30, Learning rate = 0.01, Validation accuracy = 0.8777
+Final Loss with Laplacian noise = 0.5461, Proportional noise = TrueHidden layers = [64, 32, 16],  Number of samples = 6,  Number of Epochs = 30, Learning rate = 0.01, Validation accuracy = 0.9057
+Final Loss = 0.0648, Proportional noise = FalseHidden layers = [64, 32, 16],   Number of Epochs = 30, Learning rate = 0.01, Validation accuracy = 0.9540
+
+Final Loss with Laplacian noise = 1.7093, Proportional noise = FalseHidden layers = [64, 32, 16],  Number of samples = 5,  Number of Epochs = 45, Learning rate = 0.001, Validation accuracy = 0.4828
+Final Loss with Laplacian noise = 1.1602, Proportional noise = TrueHidden layers = [64, 32, 16],  Number of samples = 5,  Number of Epochs = 45, Learning rate = 0.001, Validation accuracy = 0.7733
+Final Loss = 0.1459, Proportional noise = FalseHidden layers = [64, 32, 16],   Number of Epochs = 45, Learning rate = 0.001, Validation accuracy = 0.9413
+
+Final Loss with Laplacian noise = 0.1611, Proportional noise = FalseHidden layers = [128, 64, 32, 16],  Number of samples = 6,  Number of Epochs = 45, Learning rate = 0.01, Validation accuracy = 0.9172
