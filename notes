@@ -4,4 +4,6 @@
 
 3) Faire en sorte que l'on injecte du bruit différent pour chaque item dans la batch. Voir article benjamin
 
+4) Garder un track de la magnitude de bruit qui est injecté (tester que les bruits n'explosent pas) -- mediane & moyenne
 
+5) 
