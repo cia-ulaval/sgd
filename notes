@@ -2,3 +2,6 @@
 
 2) reduire/augmenter variance de loi normale et tester avec un graphe des performances
 
+3) Faire en sorte que l'on injecte du bruit différent pour chaque item dans la batch. Voir article benjamin
+
+
