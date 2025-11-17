@@ -131,7 +131,6 @@ class Model:
                 activations = []
                 pre_activations = []
 
-                # ---- Add Laplacian (anisotropic) noise per layer ----
                 noisy_layers = []
                 for (W, b) in self.layers:
                     Sigma_W = tf.random.uniform(W.shape, 0.001, 0.01)
@@ -186,4 +185,5 @@ class Model:
         delta = tf.norm(W_curr - W_prev)
         scale = tf.norm(W_prev) + 1e-9
         moment = tf.exp(-gamma * delta / scale)
+
         return tf.clip_by_value(moment, 0.8, 1.0)
