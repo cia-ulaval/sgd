@@ -16,7 +16,7 @@ class ModelRemovableHandle:
 
 def make_noisy_model(model: nn.Module, var_provider: ParamVarianceProvider) -> ModelRemovableHandle:
     handles = []
-    for name, module in model.named_modules():
+    for module in model.modules():
         if isinstance(module, nn.Conv2d):
             hook = functools.partial(conv2d_hook, var_provider=var_provider)
             handles.append(module.register_forward_hook(hook))
