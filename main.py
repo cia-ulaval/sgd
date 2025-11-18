@@ -1,5 +1,8 @@
+import torch
 from time import time
 from torch.utils.tensorboard import SummaryWriter
+
+from src.noise import make_model_noisy
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
@@ -33,7 +36,7 @@ def main(cfg):
     if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
         raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
     var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
-    model.set_variance_provider(var_provider)
+    noise_handle = make_model_noisy(model, var_provider) if cfg['noise_std'] > 0 else None
 
     # If GPU is available: make use of it
     if torch.cuda.is_available():
@@ -67,6 +70,8 @@ def main(cfg):
 
         epoch_number += 1
 
+    if noise_handle is not None:
+        noise_handle.remove()
     writer.close()
     print("\nTraining finished.")
 
@@ -76,8 +81,8 @@ if __name__ == '__main__':
         'project_name': 'SSGD',
         'seed': 20250729,
         'dataset': 'CIFAR100',
-        'noise_std': 0,
-        'covariance_mode': "isotropic",  # 'isotropic', 'sq_grads', 'inv_sq_grads'
+        'noise_std': 5e-5,
+        'covariance_mode': "inv_sq_grads",  # 'isotropic', 'sq_grads', 'inv_sq_grads'
         'n_epochs': 40,
         'lr': 1e-3,
     }
