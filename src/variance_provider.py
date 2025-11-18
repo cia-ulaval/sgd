@@ -76,3 +76,49 @@ class InvAdamSqGradsVarianceProvider:
 
         v = 1 / (v + self.eps)
         return v
+
+
+class KaimingVarianceProvider:
+    def __call__(self, param: torch.Tensor) -> torch.Tensor:
+        # BatchNorm weights / biases, or any 1D param:
+        if param.dim() == 1:
+            # Treat BN gamma/beta as deterministic: no noise.
+            return torch.zeros_like(param)
+
+        # Linear: (out_features, in_features)
+        if param.dim() == 2:
+            fan_in = param.size(1)
+
+        # ConvNd: (out_channels, in_channels/groups, *kernel)
+        elif param.dim() > 2:
+            # numel of one filter = fan_in (since it's per-output-channel)
+            fan_in = param[0].numel()
+
+        else:
+            # Shouldn’t happen, but keep it safe
+            return torch.zeros_like(param)
+
+        var = 2.0 / float(fan_in)
+        return torch.full_like(param, var)
+
+
+class XavierVarianceProvider:
+    def __call__(self, param: torch.Tensor) -> torch.Tensor:
+        # 1D params (e.g. BatchNorm gamma/beta) → no noise
+        if param.dim() == 1:
+            return torch.zeros_like(param)
+
+        if param.dim() == 2:  # Linear: (out, in)
+            fan_in = param.size(1)
+            fan_out = param.size(0)
+
+        elif param.dim() > 2:  # ConvNd
+            # Rough but standard: use PyTorch's fan calc style
+            fan_in = param[0].numel()
+            fan_out = param.size(0)
+
+        else:
+            return torch.zeros_like(param)
+
+        var = 2.0 / float(fan_in + fan_out)
+        return torch.full_like(param, var)

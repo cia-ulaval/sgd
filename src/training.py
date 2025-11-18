@@ -1,7 +1,7 @@
 import torch
 
 
-def train_one_epoch(training_loader, optimizer, model, loss_fn):
+def train_one_epoch(training_loader, optimizer, noise_anihilator, model, loss_fn):
     # Here, we use enumerate(training_loader) instead of
     # iter(training_loader) so that we can track the batch
     # index and do some intra-epoch reporting
@@ -26,3 +26,5 @@ def train_one_epoch(training_loader, optimizer, model, loss_fn):
 
         # Adjust learning weights
         optimizer.step()
+        if noise_anihilator is not None:
+            noise_anihilator.step()
