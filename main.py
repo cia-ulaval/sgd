@@ -1,8 +1,7 @@
 import torch
 from time import time
 from torch.utils.tensorboard import SummaryWriter
-
-from src.noise import make_model_noisy
+from src.noise import make_noisy_model
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
@@ -14,8 +13,8 @@ from tqdm import trange
 
 
 VARIANCE_PROVIDER_FACTORIES = {
-    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std'] ** 2),
-    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std'] ** 2),
+    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
+    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
     "isotropic": lambda optimizer, cfg: ConstantVarianceProvider(cfg['noise_std']**2),
 }
 
@@ -36,7 +35,7 @@ def main(cfg):
     if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
         raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
     var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
-    noise_handle = make_model_noisy(model, var_provider) if cfg['noise_std'] > 0 else None
+    noise_handle = make_noisy_model(model, var_provider) if cfg['noise_std'] > 0 else None
 
     # If GPU is available: make use of it
     if torch.cuda.is_available():

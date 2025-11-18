@@ -2,6 +2,7 @@ import functools
 import torch
 import torch.nn as nn
 from src.variance_provider import ParamVarianceProvider
+from typing import Optional, Tuple
 
 
 class ModelRemovableHandle:
@@ -13,7 +14,7 @@ class ModelRemovableHandle:
             handle.remove()
 
 
-def make_model_noisy(model: nn.Module, var_provider: ParamVarianceProvider) -> ModelRemovableHandle:
+def make_noisy_model(model: nn.Module, var_provider: ParamVarianceProvider) -> ModelRemovableHandle:
     handles = []
     for name, module in model.named_modules():
         if isinstance(module, nn.Conv2d):
@@ -26,7 +27,13 @@ def make_model_noisy(model: nn.Module, var_provider: ParamVarianceProvider) -> M
     return ModelRemovableHandle(handles)
 
 
-def conv2d_hook(module: nn.Conv2d, args, mean, *, var_provider: ParamVarianceProvider):
+def conv2d_hook(
+    module: nn.Conv2d,
+    args: Tuple[torch.Tensor],
+    mean: torch.Tensor,
+    *,
+    var_provider: ParamVarianceProvider,
+) -> Optional[torch.Tensor]:
     if not module.training:
         return None
 
@@ -43,13 +50,19 @@ def conv2d_hook(module: nn.Conv2d, args, mean, *, var_provider: ParamVariancePro
         groups=module.groups,
     )  # (B, C_out, H_out, W_out)
 
-    std_out = torch.sqrt(var.clamp_min(1e-12))  # clamp to prevent nan grads
-    eps = torch.randn_like(mean) * std_out
+    std = var.clamp_min(1e-12).sqrt()  # clamp to prevent nan grads
+    eps = torch.randn_like(mean) * std
+    y = mean + eps
+    return y
 
-    return mean + eps
 
-
-def linear_hook(module: nn.Linear, args, mean, *, var_provider: ParamVarianceProvider):
+def linear_hook(
+    module: nn.Linear,
+    args: Tuple[torch.Tensor],
+    mean: torch.Tensor,
+    *,
+    var_provider: ParamVarianceProvider,
+) -> Optional[torch.Tensor]:
     if not module.training:
         return None
 
@@ -60,7 +73,7 @@ def linear_hook(module: nn.Linear, args, mean, *, var_provider: ParamVariancePro
 
     var = torch.nn.functional.linear(x*x, weight_var, bias_var)  # (B, out)
 
-    std_out = torch.sqrt(var.clamp_min(1e-12))  # clamp to prevent nan grads
-    eps = torch.randn_like(mean) * std_out  # broadcast over out dim
-
-    return mean + eps
+    std = var.clamp_min(1e-12).sqrt()  # clamp to prevent nan grads
+    eps = torch.randn_like(mean) * std
+    y = mean + eps
+    return y
