@@ -8,14 +8,14 @@ from src.loss_function import compute_01_loss
 from src.model import *
 from src.seed import set_seed
 from src.training import train_one_epoch
-from src.variance_provider import ConstantVarianceProvider, AdamSqGradsVarianceProvider, InvAdamSqGradsVarianceProvider
+from src.variance_provider import IsotropicVarianceProvider, AdamSqGradsVarianceProvider, InvAdamSqGradsVarianceProvider
 from tqdm import trange
 
 
 VARIANCE_PROVIDER_FACTORIES = {
     "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
     "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
-    "isotropic": lambda optimizer, cfg: ConstantVarianceProvider(cfg['noise_std']**2),
+    "isotropic": lambda optimizer, cfg: IsotropicVarianceProvider(cfg['noise_std']**2),
 }
 
 

@@ -13,7 +13,7 @@ class ParamVarianceProvider(Protocol):
         ...
 
 
-class ConstantVarianceProvider:
+class IsotropicVarianceProvider:
     def __init__(self, default_var: float):
         self.default_var = float(default_var)
 
