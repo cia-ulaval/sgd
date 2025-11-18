@@ -1,6 +1,10 @@
+import time
+
+
 def create_run_name(config):
     return 'dataset=' + config['dataset'] + \
            '_noiseSTD=' + str(config['noise_std']) + \
-           '_noiseTYPE=' + config['noise_type'] + \
+           '_covarianceMODE=' + str(config['covariance_mode']) + \
            '_lr=' + str(config['lr']) + \
-           '_seed=' + str(config['seed'])
+           '_seed=' + str(config['seed']) + \
+           f'_t={time.time_ns()}'
