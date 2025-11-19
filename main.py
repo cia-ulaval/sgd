@@ -1,41 +1,54 @@
+import torch
 from time import time
-import wandb
-wandb.login()
-
+from torch.utils.tensorboard import SummaryWriter
+from src.noise import make_noisy_model
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
 from src.model import *
 from src.seed import set_seed
 from src.training import train_one_epoch
+from src.variance_provider import IsotropicVarianceProvider, AdamSqGradsVarianceProvider, InvAdamSqGradsVarianceProvider
+from tqdm import trange
+
+
+VARIANCE_PROVIDER_FACTORIES = {
+    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
+    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
+    "isotropic": lambda optimizer, cfg: IsotropicVarianceProvider(cfg['noise_std']**2),
+}
+
 
 def main(cfg):
     set_seed(cfg['seed'])
-    run_name = create_run_name(cfg)
-    if cfg['is_using_wandb']:
-        wandb.init(name=str(run_name), project=cfg['project_name'], config=cfg)
+    writer = SummaryWriter(f"./logs/{create_run_name(cfg)}")
 
     print("\nStandard training loop initialized.\n")
 
     # We initialize the various component for our training.
     training_loader, validation_loader, classes = dataset_creator()
-    model = GarmentClassifier(noise_type=cfg['noise_type'], noise_std=cfg['noise_std'])
+    model = GarmentClassifier()
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
+
+    covariance_mode = cfg['covariance_mode']
+    if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
+        raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
+    var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
+    noise_handle = make_noisy_model(model, var_provider) if cfg['noise_std'] > 0 else None
 
     # If GPU is available: make use of it
     if torch.cuda.is_available():
         model = model.cuda()
 
-    # Initializing in a separate cell so we can easily add more epochs to the same run
     epoch_number = 0
 
     best_vloss = torch.inf
 
     t_init = time()
-    for epoch in range(cfg['n_epochs']):
+    for epoch in trange(cfg['n_epochs']):
         # Make sure gradient tracking is on, and do a pass over the data
-        model.train(True)
+        model.train()
         train_one_epoch(training_loader, optimizer, model, loss_fn)
 
         # Set the model to evaluation mode, disabling dropout and using population
@@ -51,24 +64,26 @@ def main(cfg):
         if avg_vloss < best_vloss:
             best_vloss = avg_vloss
 
-        seed_results = {'train_loss': avg_tloss, 'valid_loss': avg_vloss}
-        if cfg['is_using_wandb']:
-            wandb.log(seed_results)
+        writer.add_scalar('loss/train', avg_tloss.item(), epoch)
+        writer.add_scalar('loss/valid', avg_vloss.item(), epoch)
 
         epoch_number += 1
-    if cfg['is_using_wandb']:
-        wandb.finish()
+
+    if noise_handle is not None:
+        noise_handle.remove()
+    writer.close()
     print("\nTraining finished.")
 
-if __name__=='__main__':
-    config = {'project_name': 'SSGD',
-              'is_using_wandb': True,
-              'seed': 20250729,
-              'dataset': 'CIFAR100',
-              'noise_std': None,
-              'noise_type': 'prop',
-              'n_epochs': 100,
-              'lr': 0.01}
-    for noise_std in [1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0.0003, 0.0001, 0]:
-        config['noise_std'] = noise_std
-        main(config)
+
+if __name__ == '__main__':
+    config = {
+        'project_name': 'SSGD',
+        'seed': 20250729,
+        'dataset': 'CIFAR100',
+        'noise_std': 5e-5,
+        'covariance_mode': "inv_sq_grads",  # 'isotropic', 'sq_grads', 'inv_sq_grads'
+        'n_epochs': 40,
+        'lr': 1e-3,
+    }
+
+    main(config)

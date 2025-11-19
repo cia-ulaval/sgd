@@ -1,4 +1,6 @@
 torch~=2.7.1
 torchvision~=0.22.1
-numpy~=2.3.2
+numpy~=2.2.6
 wandb~=0.22.2
+tensorboard~=2.20.0
+tqdm~=4.67.1
