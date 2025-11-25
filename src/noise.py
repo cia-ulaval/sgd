@@ -62,10 +62,9 @@ def conv2d_hook(
 
     if noise_scheduler is not None:
         noise_scale = noise_scheduler.get_noise_scalar()
-        y = mean + eps * noise_scale
-    else:
-        y = mean + eps
+        eps = eps * noise_scale
 
+    y = mean + eps
     return y
 
 
@@ -92,8 +91,7 @@ def linear_hook(
 
     if noise_scheduler is not None:
         noise_scale = noise_scheduler.get_noise_scalar()
-        y = mean + eps * noise_scale
-    else:
-        y = mean + eps
+        eps = eps * noise_scale
 
+    y = mean + eps
     return y
