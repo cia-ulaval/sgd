@@ -27,22 +27,23 @@ class AdamSqGradsVarianceProvider:
     Uses Adam's exp_avg_sq as the *variance* for each parameter.
     If a parameter doesn't (yet) have state, falls back to default_var.
     """
-    def __init__(self, optimizer: torch.optim.Optimizer, default_var: float = 0.0, var_scalar: float = 1.0):
+    def __init__(self, optimizer: torch.optim.Optimizer, var_scalar: float = 1.0):
         self.optimizer = optimizer
-        self.default_var = default_var
         self.var_scalar = var_scalar
 
     def __call__(self, param: nn.Parameter) -> torch.Tensor:
         # 1. get adam's second order momentum
         state = self.optimizer.state.get(param, None)
         if state is None:
-            return param.new_full(param.shape, self.default_var)
+            return param.new_full(param.shape, 0.0)
 
         v = state.get("exp_avg_sq", None)
         if v is None:
-            return param.new_full(param.shape, self.default_var)
+            return param.new_full(param.shape, 0.0)
 
         # 2. compute variance
+        v = v / v.mean()
+
         if self.var_scalar != 1.0:
             v = v * self.var_scalar
 
@@ -54,9 +55,8 @@ class InvAdamSqGradsVarianceProvider:
     Uses Adam's exp_avg_sq as the *inverse variance* for each parameter.
     If a parameter doesn't (yet) have state, falls back to default_var.
     """
-    def __init__(self, optimizer: torch.optim.Optimizer, default_var: float = 0.0, var_scalar: float = 1.0, eps=1e-8):
+    def __init__(self, optimizer: torch.optim.Optimizer, var_scalar: float = 1.0, eps=1e-8):
         self.optimizer = optimizer
-        self.default_var = default_var
         self.var_scalar = var_scalar
         self.eps = eps
 
@@ -64,21 +64,55 @@ class InvAdamSqGradsVarianceProvider:
         # 1. get adam's second order momentum
         state = self.optimizer.state.get(param, None)
         if state is None:
-            return param.new_full(param.shape, self.default_var)
+            return param.new_full(param.shape, 0.0)
 
         v = state.get("exp_avg_sq", None)
         if v is None:
-            return param.new_full(param.shape, self.default_var)
+            return param.new_full(param.shape, 0.0)
 
         # 2. compute variance
-        if self.var_scalar != 1.0:
-            v = v / self.var_scalar
-
         v = 1 / (v + self.eps)
+        v = v / v.mean()
+        v = v.clamp_min(1.0)
+
+        if self.var_scalar != 1.0:
+            v = v * self.var_scalar
+
         return v
 
 
+class SoftmaxAdamSqGradsVarianceProvider:
+    def __init__(self, optimizer: torch.optim.Optimizer, var_scalar: float = 1.0, temperature: float = 1.0, eps=1e-8):
+        self.optimizer = optimizer
+        self.var_scalar = var_scalar
+        self.temperature = temperature
+        self.eps = eps
+
+    def __call__(self, param: nn.Parameter) -> torch.Tensor:
+        # 1. get adam's second order momentum
+        state = self.optimizer.state.get(param, None)
+        if state is None:
+            return param.new_full(param.shape, 0.0)
+
+        v = state.get("exp_avg_sq", None)
+        if v is None:
+            return param.new_full(param.shape, 0.0)
+
+        logits = -self.temperature * (v + self.eps).log()
+        logits_exp = (logits - logits.max()).exp()
+        var = logits_exp / logits_exp.mean()
+
+        # 2. compute variance
+        if self.var_scalar != 1.0:
+            var = var * self.var_scalar
+
+        return var
+
+
 class KaimingVarianceProvider:
+    def __init__(self, var_scalar: float = 1.0):
+        self.var_scalar = var_scalar
+
     def __call__(self, param: torch.Tensor) -> torch.Tensor:
         # BatchNorm weights / biases, or any 1D param:
         if param.dim() == 1:
@@ -95,14 +129,17 @@ class KaimingVarianceProvider:
             fan_in = param[0].numel()
 
         else:
-            # Shouldn’t happen, but keep it safe
+            # shouldn’t happen
             return torch.zeros_like(param)
 
-        var = 2.0 / float(fan_in)
+        var = self.var_scalar * 2.0 / fan_in
         return torch.full_like(param, var)
 
 
 class XavierVarianceProvider:
+    def __init__(self, var_scalar: float = 1.0):
+        self.var_scalar = var_scalar
+
     def __call__(self, param: torch.Tensor) -> torch.Tensor:
         # 1D params (e.g. BatchNorm gamma/beta) → no noise
         if param.dim() == 1:
@@ -114,11 +151,11 @@ class XavierVarianceProvider:
 
         elif param.dim() > 2:  # ConvNd
             # Rough but standard: use PyTorch's fan calc style
-            fan_in = param[0].numel()
+            fan_in = param.shape[1:].numel()
             fan_out = param.size(0)
 
         else:
             return torch.zeros_like(param)
 
-        var = 2.0 / float(fan_in + fan_out)
+        var = self.var_scalar * 2.0 / (fan_in + fan_out)
         return torch.full_like(param, var)

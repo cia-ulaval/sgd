@@ -1,43 +1,39 @@
-import math
-
 import torch
-from time import time
 from torch.utils.tensorboard import SummaryWriter
 from src.noise import make_noisy_model
+from src.noise_scheduler import LinearNoiseScheduler
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
 from src.model import *
 from src.seed import set_seed
 from src.training import train_one_epoch
-from src.variance_provider import IsotropicVarianceProvider, AdamSqGradsVarianceProvider, InvAdamSqGradsVarianceProvider
+from src.variance_provider import (
+    IsotropicVarianceProvider, AdamSqGradsVarianceProvider,
+    InvAdamSqGradsVarianceProvider, KaimingVarianceProvider, SoftmaxAdamSqGradsVarianceProvider, XavierVarianceProvider,
+)
 from tqdm import trange
 
 
 VARIANCE_PROVIDER_FACTORIES = {
-    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
-    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
     "isotropic": lambda optimizer, cfg: IsotropicVarianceProvider(cfg['noise_std']**2),
+    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "softmax_sq_grads": lambda optimizer, cfg: SoftmaxAdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "kaiming": lambda optimizer, cfg: KaimingVarianceProvider(cfg['noise_std']**2),
+    "xavier": lambda optimizer, cfg: XavierVarianceProvider(cfg['noise_std']**2),
 }
 
 
-class NoiseAnihilator:
-    def __init__(self, total_steps: int, alpha: float):
-        self.total_steps = total_steps
-        self.current_step = 0
-        self.alpha = alpha
-
-    def step(self):
-        self.current_step = min(self.current_step + 1, self.total_steps - 1)
-
-    def get_noise_scale(self):
-        return (self.total_steps - 1 - self.current_step) / (self.total_steps - 1)
-        # return 1 / math.sqrt(1 + self.alpha * self.current_step)
+NOISE_SCHEDULER_FACTORIES = {
+    None: lambda *_args: None,
+    "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
+}
 
 
 def main(cfg):
     set_seed(cfg['seed'])
-    writer = SummaryWriter(f"./logs/{create_run_name(cfg)}")
+    writer = SummaryWriter(cfg['log_dir'])
 
     print("\nStandard training loop initialized.\n")
 
@@ -49,7 +45,7 @@ def main(cfg):
 
     if cfg['weights_init'] == "zero":
         for module in model.modules():
-            if isinstance(module, nn.BatchNorm1d):
+            if not isinstance(module, (nn.Linear, nn.Conv2d)):
                 continue
 
             if hasattr(module, "weight"):
@@ -57,22 +53,22 @@ def main(cfg):
             if hasattr(module, "bias"):
                 torch.nn.init.zeros_(module.bias)
 
+    noise_handle = None
+    noise_scheduler = None
     if cfg['noise_std'] is not None:
         covariance_mode = cfg['covariance_mode']
         if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
             raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
         var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
-        if cfg['noise_anihilation'] == "bayesian":
-            num_batches = 98 * cfg['n_epochs']
-            noise_anihilator = NoiseAnihilator(num_batches, (cfg['noise_reduction_at_end']**2 - 1) / num_batches)
-            # noise_anihilator = NoiseAnihilator(98 * cfg['n_epochs'], 1.0)
-            # noise_anihilator = NoiseAnihilator(98 * cfg['n_epochs'], 0.6)
-        else:
-            noise_anihilator = NoiseAnihilator(98 * cfg['n_epochs'], 0)
-        noise_handle = make_noisy_model(model, var_provider, noise_anihilator)
-    else:
-        noise_handle = None
-        noise_anihilator = None
+
+        noise_scheduler_id = cfg['noise_scheduler']
+        if noise_scheduler_id not in NOISE_SCHEDULER_FACTORIES:
+            raise RuntimeError(f"Invalid noise scheduler '{noise_scheduler_id}'. Options are: {list(NOISE_SCHEDULER_FACTORIES)}")
+
+        total_steps = len(training_loader) * cfg['n_epochs']
+        noise_scheduler = NOISE_SCHEDULER_FACTORIES[noise_scheduler_id](total_steps, cfg)
+
+        noise_handle = make_noisy_model(model, var_provider, noise_scheduler)
 
     # If GPU is available: make use of it
     if torch.cuda.is_available():
@@ -84,7 +80,7 @@ def main(cfg):
     for epoch in trange(cfg['n_epochs']):
         # Make sure gradient tracking is on, and do a pass over the data
         model.train()
-        train_one_epoch(training_loader, optimizer, noise_anihilator, model, loss_fn)
+        train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn)
 
         # Set the model to evaluation mode, disabling dropout and using population
         # statistics for batch normalization.
@@ -113,13 +109,13 @@ if __name__ == '__main__':
         'project_name': 'SSGD',
         'seed': 20250729,
         'dataset': 'CIFAR100',
-        'noise_std': 0.02,
-        'covariance_mode': "isotropic",  # 'isotropic', 'sq_grads', 'inv_sq_grads'
-        'noise_anihilation': "bayesian",
-        'noise_reduction_at_end': 10.0,
-        'weights_init': "zero",
+        'noise_std': None,
+        'covariance_mode': "isotropic",  # 'isotropic', 'sq_grads', 'inv_sq_grads', 'softmax_sq_grads', 'kaiming', 'xavier'
+        'noise_scheduler': None,
+        'weights_init': None,
         'n_epochs': 40,
-        'lr': 1e-3,
+        'lr': 5e-4,
     }
+    config['log_dir'] = f"./logs_presentation/{create_run_name(config)}"
 
     main(config)
