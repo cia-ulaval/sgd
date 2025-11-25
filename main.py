@@ -44,14 +44,7 @@ def main(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
 
     if cfg['weights_init'] == "zero":
-        for module in model.modules():
-            if not isinstance(module, (nn.Linear, nn.Conv2d)):
-                continue
-
-            if hasattr(module, "weight"):
-                torch.nn.init.zeros_(module.weight)
-            if hasattr(module, "bias"):
-                torch.nn.init.zeros_(module.bias)
+        zero_init(model)
 
     noise_handle = None
     noise_scheduler = None
@@ -76,7 +69,6 @@ def main(cfg):
 
     best_vloss = torch.inf
 
-    # t_init = time()
     for epoch in trange(cfg['n_epochs']):
         # Make sure gradient tracking is on, and do a pass over the data
         model.train()
@@ -87,9 +79,6 @@ def main(cfg):
         model.eval()
 
         avg_tloss, avg_vloss = compute_01_loss(model, training_loader, validation_loader)
-        # cur_time = round(time() - t_init, 2)
-        # print('Epoch number: {}; Train 0-1 loss: {}; Valid 0-1 loss: {}; Running time: {}s.'.format(
-        #     epoch + 1, round(avg_tloss.item(), 4), round(avg_vloss.item(), 4), cur_time))
 
         # Track best performance, and save the model's state
         if avg_vloss < best_vloss:
@@ -104,6 +93,17 @@ def main(cfg):
     print("\nTraining finished.")
 
 
+def zero_init(model):
+    for module in model.modules():
+        if not isinstance(module, (nn.Linear, nn.Conv2d)):
+            continue
+
+        if hasattr(module, "weight"):
+            torch.nn.init.zeros_(module.weight)
+        if hasattr(module, "bias"):
+            torch.nn.init.zeros_(module.bias)
+
+
 if __name__ == '__main__':
     config = {
         'project_name': 'SSGD',
@@ -111,8 +111,8 @@ if __name__ == '__main__':
         'dataset': 'CIFAR100',
         'noise_std': None,
         'covariance_mode': "isotropic",  # 'isotropic', 'sq_grads', 'inv_sq_grads', 'softmax_sq_grads', 'kaiming', 'xavier'
-        'noise_scheduler': None,
-        'weights_init': None,
+        'noise_scheduler': None,  # None, 'linear'
+        'weights_init': None,  # None, "zero"
         'n_epochs': 40,
         'lr': 5e-4,
     }

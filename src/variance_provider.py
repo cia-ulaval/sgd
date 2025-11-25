@@ -73,7 +73,6 @@ class InvAdamSqGradsVarianceProvider:
         # 2. compute variance
         v = 1 / (v + self.eps)
         v = v / v.mean()
-        v = v.clamp_min(1.0)
 
         if self.var_scalar != 1.0:
             v = v * self.var_scalar
