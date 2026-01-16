@@ -48,7 +48,8 @@ def main(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
     optimizer_hook = get_optimizer_hook(optimizer, cfg)
 
-    noise_hook, noise_scheduler = get_noise_hook(model, optimizer, training_loader, cfg)
+    total_steps = len(training_loader) * cfg['n_epochs']
+    noise_hook, noise_scheduler = get_noise_hook(model, optimizer, total_steps, cfg)
 
     if torch.cuda.is_available():
         model = model.cuda()
@@ -80,26 +81,32 @@ def get_optimizer_hook(optimizer, cfg):
         return contextlib.nullcontext()
 
 
-def get_noise_hook(model, optimizer, training_loader, cfg):
+def get_noise_hook(model, optimizer, total_steps, cfg):
     noise_hook = contextlib.nullcontext()
     noise_scheduler = None
 
     if cfg['noise_std'] is not None:
-        covariance_mode = cfg['covariance_mode']
-        if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
-            raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
-        var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
-
-        noise_scheduler_id = cfg['noise_scheduler']
-        if noise_scheduler_id not in NOISE_SCHEDULER_FACTORIES:
-            raise RuntimeError(f"Invalid noise scheduler '{noise_scheduler_id}'. Options are: {list(NOISE_SCHEDULER_FACTORIES)}")
-
-        total_steps = len(training_loader) * cfg['n_epochs']
-        noise_scheduler = NOISE_SCHEDULER_FACTORIES[noise_scheduler_id](total_steps, cfg)
-
+        var_provider = get_var_provider(optimizer, cfg)
+        noise_scheduler = get_noise_scheduler(total_steps, cfg)
         noise_hook = NoiseHook(model, var_provider, noise_scheduler)
 
     return noise_hook, noise_scheduler
+
+
+def get_var_provider(optimizer, cfg):
+    covariance_mode = cfg['covariance_mode']
+    if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
+        raise RuntimeError(
+            f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}"
+        )
+    return VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
+
+
+def get_noise_scheduler(total_steps, cfg):
+    noise_scheduler_id = cfg['noise_scheduler']
+    if noise_scheduler_id not in NOISE_SCHEDULER_FACTORIES:
+        raise RuntimeError(f"Invalid noise scheduler '{noise_scheduler_id}'. Options are: {list(NOISE_SCHEDULER_FACTORIES)}")
+    return NOISE_SCHEDULER_FACTORIES[noise_scheduler_id](total_steps, cfg)
 
 
 if __name__ == '__main__':
