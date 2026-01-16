@@ -21,4 +21,17 @@ class LinearNoiseScheduler(NoiseScheduler):
 
     def get_noise_scalar(self):
         return (self.total_steps - 1 - self.current_step) / (self.total_steps - 1)
-        # return 1 / math.sqrt(1 + self.alpha * self.current_step)
+
+
+class PartialNoiseScheduler(NoiseScheduler):
+    def __init__(self, total_steps: int, start_step_ratio: float, end_step_ratio: float):
+        self.total_steps = total_steps
+        self.current_step = 0
+        self.start_step_ratio = start_step_ratio
+        self.end_step_ratio = end_step_ratio
+
+    def step(self):
+        self.current_step = min(self.current_step + 1, self.total_steps - 1)
+
+    def get_noise_scalar(self):
+        return float(self.start_step_ratio <= self.current_step / self.total_steps < self.end_step_ratio)

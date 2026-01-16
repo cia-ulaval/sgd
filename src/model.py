@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class GarmentClassifier(nn.Module):
+class SmallerGarmentClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.pool = nn.MaxPool2d(2, 2)
@@ -22,7 +22,7 @@ class GarmentClassifier(nn.Module):
         x = F.relu(self.conv2(x))
         x = self.pool(x)
 
-        x = x.view(-1, 384)
+        x = x.view(-1, 400)
         x = self.bn1(x)
         x = F.relu(self.fc1(x))
         x = self.bn2(x)
@@ -32,7 +32,7 @@ class GarmentClassifier(nn.Module):
         return x
 
 
-class LargerGarmentClassifier(nn.Module):
+class GarmentClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.pool = nn.MaxPool2d(2, 2)

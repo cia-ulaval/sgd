@@ -1,4 +1,6 @@
 import functools
+import math
+
 import torch
 import torch.nn as nn
 
@@ -46,16 +48,16 @@ def conv2d_hook(
 
     x = args[0]
 
-    weight_var = var_provider(module.weight)  # (C_out, C_in_per_group, kH, kW)
-    bias_var = var_provider(module.bias) if module.bias is not None else None  # (C_out,)
+    weight_var = var_provider(module.weight)
+    bias_var = var_provider(module.bias) if module.bias is not None else None
 
     var = torch.nn.functional.conv2d(
-        x*x, weight_var, bias_var,
+        x.square(), weight_var, bias_var,
         stride=module.stride,
         padding=module.padding,
         dilation=module.dilation,
         groups=module.groups,
-    )  # (B, C_out, H_out, W_out)
+    )
 
     std = var.clamp_min(1e-12).sqrt()  # clamp to prevent nan grads
     eps = torch.randn_like(mean) * std
@@ -81,10 +83,10 @@ def linear_hook(
 
     x = args[0]
 
-    weight_var = var_provider(module.weight)  # (out, in)
-    bias_var = var_provider(module.bias) if module.bias is not None else None  # (out,)
+    weight_var = var_provider(module.weight)
+    bias_var = var_provider(module.bias) if module.bias is not None else None
 
-    var = torch.nn.functional.linear(x*x, weight_var, bias_var)  # (B, out)
+    var = torch.nn.functional.linear(x.square(), weight_var, bias_var)
 
     std = var.clamp_min(1e-12).sqrt()  # clamp to prevent nan grads
     eps = torch.randn_like(mean) * std

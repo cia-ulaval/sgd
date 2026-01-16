@@ -1,7 +1,7 @@
 import torch
 
 
-def train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn):
+def train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, num_noise_samples=1):
     # Here, we use enumerate(training_loader) instead of
     # iter(training_loader) so that we can track the batch
     # index and do some intra-epoch reporting
@@ -18,11 +18,12 @@ def train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn)
         optimizer.zero_grad()
 
         # Make predictions for this batch
-        outputs = model(inputs)
+        for sample_i in range(1, 1 + max(1, num_noise_samples)):
+            outputs = model(inputs)
 
-        # Compute the loss and its gradients
-        loss = loss_fn(outputs, labels)
-        loss.backward()
+            # Compute the loss and its gradients
+            loss = loss_fn(outputs, labels) / num_noise_samples
+            loss.backward()
 
         # Adjust learning weights
         optimizer.step()
