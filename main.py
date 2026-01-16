@@ -1,78 +1,144 @@
+import contextlib
+import pathlib
 import torch
-from time import time
+import json
 from torch.utils.tensorboard import SummaryWriter
-from src.noise import make_noisy_model
+from src.ablation import print_results_table
+from src.noise import NoiseHook
+from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
 from src.model import *
 from src.seed import set_seed
 from src.training import train_one_epoch
-from src.variance_provider import IsotropicVarianceProvider, AdamSqGradsVarianceProvider, InvAdamSqGradsVarianceProvider
+from src.variance_provider import (
+    GradsStatsHook, GradsStatsVarianceProvider, IsotropicVarianceProvider, AdamSqGradsVarianceProvider,
+    InvAdamSqGradsVarianceProvider, KaimingVarianceProvider, SoftmaxAdamSqGradsVarianceProvider, XavierVarianceProvider,
+)
 from tqdm import trange
 
 
 VARIANCE_PROVIDER_FACTORIES = {
-    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
-    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, 0.0, cfg['noise_std']**2),
     "isotropic": lambda optimizer, cfg: IsotropicVarianceProvider(cfg['noise_std']**2),
+    "sq_grads": lambda optimizer, cfg: AdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "inv_sq_grads": lambda optimizer, cfg: InvAdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "softmax_sq_grads": lambda optimizer, cfg: SoftmaxAdamSqGradsVarianceProvider(optimizer, cfg['noise_std']**2),
+    "bineta": lambda optimizer, cfg: GradsStatsVarianceProvider(optimizer, cfg['noise_std'] ** 2),
+    "kaiming": lambda optimizer, cfg: KaimingVarianceProvider(cfg['noise_std']**2),
+    "xavier": lambda optimizer, cfg: XavierVarianceProvider(cfg['noise_std']**2),
+}
+
+
+NOISE_SCHEDULER_FACTORIES = {
+    None: lambda *_args: None,
+    "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
+    "partial": lambda total_steps, cfg: PartialNoiseScheduler(total_steps, cfg.get('noise_scheduler_start_step_ratio', 0.0), cfg.get('noise_scheduler_end_step_ratio', 1.0)),
 }
 
 
 def main(cfg):
     set_seed(cfg['seed'])
-    writer = SummaryWriter(f"./logs/{create_run_name(cfg)}")
+    run_dir = cfg['log_dir'] / create_run_name(cfg)
+    writer = SummaryWriter(str(run_dir))
+    best_loss_path = run_dir / "best_loss.json"
 
     print("\nStandard training loop initialized.\n")
 
-    # We initialize the various component for our training.
-    training_loader, validation_loader, classes = dataset_creator()
+    training_loader, validation_loader, test_loader, classes = dataset_creator()
     model = GarmentClassifier()
     loss_fn = torch.nn.CrossEntropyLoss()
+
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
+    optimizer_hook = get_optimizer_hook(optimizer, cfg)
 
-    covariance_mode = cfg['covariance_mode']
-    if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
-        raise RuntimeError(f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}")
-    var_provider = VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
-    noise_handle = make_noisy_model(model, var_provider) if cfg['noise_std'] > 0 else None
+    total_steps = len(training_loader) * cfg['n_epochs']
+    noise_hook, noise_scheduler = get_noise_hook(model, optimizer, total_steps, cfg)
 
-    # If GPU is available: make use of it
     if torch.cuda.is_available():
         model = model.cuda()
 
-    epoch_number = 0
+    best_valid_loss = torch.inf
 
-    best_vloss = torch.inf
-
-    t_init = time()
     for epoch in trange(cfg['n_epochs']):
-        # Make sure gradient tracking is on, and do a pass over the data
-        model.train()
-        train_one_epoch(training_loader, optimizer, model, loss_fn)
+        with noise_hook, optimizer_hook:
+            model.train()
+            train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, cfg['num_noise_samples_batch'], cfg['num_noise_samples_accumulation'])
 
-        # Set the model to evaluation mode, disabling dropout and using population
-        # statistics for batch normalization.
         model.eval()
+        avg_train_loss, avg_valid_loss, avg_test_loss = compute_01_loss(model, training_loader, validation_loader, test_loader)
 
-        avg_tloss, avg_vloss = compute_01_loss(model, training_loader, validation_loader)
-        cur_time = round(time() - t_init, 2)
-        print('Epoch number: {}; Train 0-1 loss: {}; Valid 0-1 loss: {}; Running time: {}s.'.format(
-            epoch_number + 1, round(avg_tloss.item(), 4), round(avg_vloss.item(), 4), cur_time))
+        if avg_valid_loss < best_valid_loss:
+            best_valid_loss = avg_valid_loss
 
-        # Track best performance, and save the model's state
-        if avg_vloss < best_vloss:
-            best_vloss = avg_vloss
+            atomic_write_json(best_loss_path, {
+                "epoch_0_based": epoch,
+                "train_01": avg_train_loss.item(),
+                "valid_01": avg_valid_loss.item(),
+                "test_01": avg_test_loss.item(),
+                "cfg": cfg,
+            })
 
-        writer.add_scalar('loss/train', avg_tloss.item(), epoch)
-        writer.add_scalar('loss/valid', avg_vloss.item(), epoch)
+        writer.add_scalar('loss_01/train', avg_train_loss.item(), epoch)
+        writer.add_scalar('loss_01/valid', avg_valid_loss.item(), epoch)
+        writer.add_scalar('loss_01/test', avg_test_loss.item(), epoch)
 
-        epoch_number += 1
-
-    if noise_handle is not None:
-        noise_handle.remove()
     writer.close()
     print("\nTraining finished.")
+
+
+def get_optimizer_hook(optimizer, cfg):
+    if cfg.get("covariance_mode") in ("bineta",):
+        return GradsStatsHook(optimizer, alpha=0.01, sigma_min=1e-3, history_size=5, gamma=0.1)
+    else:
+        return contextlib.nullcontext()
+
+
+def get_noise_hook(model, optimizer, total_steps, cfg):
+    noise_hook = contextlib.nullcontext()
+    noise_scheduler = None
+
+    if cfg['noise_std'] is not None:
+        var_provider = get_var_provider(optimizer, cfg)
+        noise_scheduler = get_noise_scheduler(total_steps, cfg)
+        noise_hook = NoiseHook(model, var_provider, noise_scheduler)
+
+    return noise_hook, noise_scheduler
+
+
+def get_var_provider(optimizer, cfg):
+    covariance_mode = cfg['covariance_mode']
+    if covariance_mode not in VARIANCE_PROVIDER_FACTORIES:
+        raise RuntimeError(
+            f"Invalid covariance mode '{covariance_mode}'. Options are: {list(VARIANCE_PROVIDER_FACTORIES)}"
+        )
+    return VARIANCE_PROVIDER_FACTORIES[covariance_mode](optimizer, cfg)
+
+
+def get_noise_scheduler(total_steps, cfg):
+    noise_scheduler_id = cfg['noise_scheduler']
+    if noise_scheduler_id not in NOISE_SCHEDULER_FACTORIES:
+        raise RuntimeError(f"Invalid noise scheduler '{noise_scheduler_id}'. Options are: {list(NOISE_SCHEDULER_FACTORIES)}")
+    return NOISE_SCHEDULER_FACTORIES[noise_scheduler_id](total_steps, cfg)
+
+
+def atomic_write_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(to_jsonable(payload), indent=2, sort_keys=True))
+    tmp.replace(path)
+
+
+def to_jsonable(cfg):
+    out = {}
+    for k, v in cfg.items():
+        if isinstance(v, dict):
+            out[k] = to_jsonable(v)
+        elif isinstance(v, pathlib.Path):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
 
 
 if __name__ == '__main__':
@@ -80,10 +146,49 @@ if __name__ == '__main__':
         'project_name': 'SSGD',
         'seed': 20250729,
         'dataset': 'CIFAR100',
-        'noise_std': 5e-5,
-        'covariance_mode': "inv_sq_grads",  # 'isotropic', 'sq_grads', 'inv_sq_grads'
-        'n_epochs': 40,
-        'lr': 1e-3,
+        'noise_std': None,
+        'num_noise_samples_batch': 64,
+        'num_noise_samples_accumulation': 2,
+        'covariance_mode': "bineta",  # 'isotropic', 'sq_grads', 'inv_sq_grads', 'softmax_sq_grads', 'bineta', 'kaiming', 'xavier'
+        'noise_scheduler': None,  # None, 'linear', 'partial'
+        # 'noise_scheduler_start_step_ratio': 0.5,
+        # 'noise_scheduler_end_step_ratio': 1.0,
+        'n_epochs': 120,
+        'lr': 5e-4,
+        'log_dir': pathlib.Path("./logs_ablation"),
     }
 
-    main(config)
+    num_seeds = 5
+    base_seed = 20250729
+    seeds = [base_seed + i for i in range(num_seeds)]
+
+    noise_levels = 7
+    scale_down_levels = 3
+
+    for seed in seeds:
+        config_seed = config.copy()
+        config_seed["seed"] = seed
+        for covariance_mode, base_noise_std in (
+            ("isotropic", None),  # no-noise baseline
+            ("isotropic", 0.01),
+            ("sq_grads", 0.01),
+            ("inv_sq_grads", 0.01),
+            ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
+        ):
+            if base_noise_std is None:
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = None
+                main(config_specific)
+                continue
+
+            # sigma scaling factors follow a geometric series
+            noise_std_pre_scale = base_noise_std / 2**scale_down_levels
+            for scale_up_levels in range(noise_levels):
+                sigma = noise_std_pre_scale * 2**scale_up_levels
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = sigma
+                main(config_specific)
+
+    print_results_table(config["log_dir"])
