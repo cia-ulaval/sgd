@@ -118,27 +118,35 @@ if __name__ == '__main__':
         'log_dir': pathlib.Path("./logs_ablation"),
     }
 
+    num_seeds = 5
+    base_seed = 20250729
+    seeds = [base_seed + i for i in range(num_seeds)]
+
     noise_levels = 7
     scale_down_levels = 3
-    for covariance_mode, base_noise_std in (
-        ("isotropic", None),  # no-noise baseline
-        ("isotropic", 0.01),
-        ("sq_grads", 0.01),
-        ("inv_sq_grads", 0.01),
-        ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
-    ):
-        if base_noise_std is None:
-            config_specific = config.copy()
-            config_specific["covariance_mode"] = covariance_mode
-            config_specific["noise_std"] = None
-            main(config_specific)
-            continue
 
-        # sigma scaling factors follow a geometric series
-        noise_std_pre_scale = base_noise_std / 2**scale_down_levels
-        for scale_up_levels in range(noise_levels):
-            sigma = noise_std_pre_scale * 2**scale_up_levels
-            config_specific = config.copy()
-            config_specific["covariance_mode"] = covariance_mode
-            config_specific["noise_std"] = sigma
-            main(config_specific)
+    for seed in seeds:
+        config_seed = config.copy()
+        config_seed["seed"] = seed
+        for covariance_mode, base_noise_std in (
+            ("isotropic", None),  # no-noise baseline
+            ("isotropic", 0.01),
+            ("sq_grads", 0.01),
+            ("inv_sq_grads", 0.01),
+            ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
+        ):
+            if base_noise_std is None:
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = None
+                main(config_specific)
+                continue
+
+            # sigma scaling factors follow a geometric series
+            noise_std_pre_scale = base_noise_std / 2**scale_down_levels
+            for scale_up_levels in range(noise_levels):
+                sigma = noise_std_pre_scale * 2**scale_up_levels
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = sigma
+                main(config_specific)
