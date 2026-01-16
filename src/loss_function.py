@@ -17,7 +17,6 @@ def compute_01_loss(model, training_loader, validation_loader):
     zo_loss = ZeroOneLoss()
 
     for i, (tinputs, tlabels) in enumerate(training_loader, start=1):
-        # If GPU is available: make use of it
         if torch.cuda.is_available():
             tinputs = tinputs.cuda()
             tlabels = tlabels.cuda()
@@ -27,8 +26,7 @@ def compute_01_loss(model, training_loader, validation_loader):
         ratio = 1 / i
         avg_tloss = (1-ratio)*avg_tloss + ratio*tloss
 
-    for i, vdata in enumerate(validation_loader, start=1):
-        vinputs, vlabels = vdata
+    for i, (vinputs, vlabels) in enumerate(validation_loader, start=1):
         # If GPU is available: make use of it
         if torch.cuda.is_available():
             vinputs = vinputs.cuda()

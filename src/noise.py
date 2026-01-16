@@ -1,38 +1,37 @@
+import contextlib
 import functools
-import math
-
 import torch
 import torch.nn as nn
-
 from src.noise_scheduler import NoiseScheduler
 from src.variance_provider import ParamVarianceProvider
-from typing import Optional, Tuple
+from typing import ContextManager, Optional, Tuple
 
 
-class ModelRemovableHandle:
-    def __init__(self, handles: list):
-        self.handles = handles
+class NoiseHook:
+    def __init__(
+        self,
+        model: nn.Module,
+        var_provider: ParamVarianceProvider,
+        noise_scheduler: Optional[NoiseScheduler] = None,
+    ):
+        self.model = model
+        self.var_provider = var_provider
+        self.noise_scheduler = noise_scheduler
+        self._handles = []
 
-    def remove(self):
-        for handle in self.handles:
+    def __enter__(self):
+        for module in self.model.modules():
+            if isinstance(module, nn.Conv2d):
+                hook = functools.partial(conv2d_hook, var_provider=self.var_provider, noise_scheduler=self.noise_scheduler)
+                self._handles.append(module.register_forward_hook(hook))
+            elif isinstance(module, nn.Linear):
+                hook = functools.partial(linear_hook, var_provider=self.var_provider, noise_scheduler=self.noise_scheduler)
+                self._handles.append(module.register_forward_hook(hook))
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for handle in self._handles:
             handle.remove()
-
-
-def make_noisy_model(
-    model: nn.Module,
-    var_provider: ParamVarianceProvider = None,
-    noise_scheduler: NoiseScheduler = None,
-) -> ModelRemovableHandle:
-    handles = []
-    for module in model.modules():
-        if isinstance(module, nn.Conv2d):
-            hook = functools.partial(conv2d_hook, var_provider=var_provider, noise_scheduler=noise_scheduler)
-            handles.append(module.register_forward_hook(hook))
-        elif isinstance(module, nn.Linear):
-            hook = functools.partial(linear_hook, var_provider=var_provider, noise_scheduler=noise_scheduler)
-            handles.append(module.register_forward_hook(hook))
-
-    return ModelRemovableHandle(handles)
+        self._handles.clear()
 
 
 def conv2d_hook(
@@ -40,12 +39,9 @@ def conv2d_hook(
     args: Tuple[torch.Tensor],
     mean: torch.Tensor,
     *,
-    var_provider: Optional[ParamVarianceProvider],
+    var_provider: ParamVarianceProvider,
     noise_scheduler: Optional[NoiseScheduler],
 ) -> Optional[torch.Tensor]:
-    if not module.training or var_provider is None:
-        return None
-
     x = args[0]
 
     weight_var = var_provider(module.weight)
@@ -75,12 +71,9 @@ def linear_hook(
     args: Tuple[torch.Tensor],
     mean: torch.Tensor,
     *,
-    var_provider: Optional[ParamVarianceProvider],
+    var_provider: ParamVarianceProvider,
     noise_scheduler: Optional[NoiseScheduler],
 ) -> Optional[torch.Tensor]:
-    if not module.training or var_provider is None:
-        return None
-
     x = args[0]
 
     weight_var = var_provider(module.weight)

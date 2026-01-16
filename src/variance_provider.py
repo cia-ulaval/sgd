@@ -89,11 +89,20 @@ class GradsStatsHook:
         self.gamma = gamma
 
         self._init = False
+        self._hook_handle = None
 
-        optimizer.register_step_post_hook(self.step_post_hook)
+    def __enter__(self):
+        assert self._hook_handle is None, "optimizer step_post_hook already installed"
+        self._hook_handle = self.optimizer.register_step_post_hook(self.step_post_hook)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._hook_handle is not None:
+            self._hook_handle.remove()
+            self._hook_handle = None
 
     @torch.no_grad()
-    def step_post_hook(self, *args, **kwargs):
+    def step_post_hook(self, *_args, **_kwargs):
         # EMA locale stockée paramètre par paramètre
         if not self._init:
             for group in self.optimizer.param_groups:
