@@ -80,7 +80,7 @@ def main(logdir, suffixes, labels=None, out_path=None, show=True):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training/validation loss from TensorBoard event files.")
-    parser.add_argument("--logdir", default="logs", help="Root directory to search under.")
+    parser.add_argument("--logdir", default="logs_ablation", help="Root directory to search under.")
     parser.add_argument("--suffix", "-s", action="append", required=True, help="Suffix to match (can be passed multiple times). Example: -s 0 -s 0.01")
     parser.add_argument("--label", "-l", action="append", help="Label for each suffix (same count as --suffix).")
     parser.add_argument("--out", default=None, type=str, help="Output image path.")

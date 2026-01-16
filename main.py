@@ -1,7 +1,9 @@
 import contextlib
 import pathlib
 import torch
+import json
 from torch.utils.tensorboard import SummaryWriter
+from src.ablation import print_results_table
 from src.noise import NoiseHook
 from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler
 from src.utils import create_run_name
@@ -37,11 +39,13 @@ NOISE_SCHEDULER_FACTORIES = {
 
 def main(cfg):
     set_seed(cfg['seed'])
-    writer = SummaryWriter(str(cfg['log_dir'] / create_run_name(cfg)))
+    run_dir = cfg['log_dir'] / create_run_name(cfg)
+    writer = SummaryWriter(str(run_dir))
+    best_loss_path = run_dir / "best_loss.json"
 
     print("\nStandard training loop initialized.\n")
 
-    training_loader, validation_loader, classes = dataset_creator()
+    training_loader, validation_loader, test_loader, classes = dataset_creator()
     model = GarmentClassifier()
     loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -54,21 +58,30 @@ def main(cfg):
     if torch.cuda.is_available():
         model = model.cuda()
 
-    best_vloss = torch.inf
+    best_valid_loss = torch.inf
 
     for epoch in trange(cfg['n_epochs']):
         with noise_hook, optimizer_hook:
             model.train()
-            train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, cfg['num_noise_samples'])
+            train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, cfg['num_noise_samples_batch'], cfg['num_noise_samples_accumulation'])
 
         model.eval()
-        avg_tloss, avg_vloss = compute_01_loss(model, training_loader, validation_loader)
+        avg_train_loss, avg_valid_loss, avg_test_loss = compute_01_loss(model, training_loader, validation_loader, test_loader)
 
-        if avg_vloss < best_vloss:
-            best_vloss = avg_vloss
+        if avg_valid_loss < best_valid_loss:
+            best_valid_loss = avg_valid_loss
 
-        writer.add_scalar('loss/train', avg_tloss.item(), epoch)
-        writer.add_scalar('loss/valid', avg_vloss.item(), epoch)
+            atomic_write_json(best_loss_path, {
+                "epoch_0_based": epoch,
+                "train_01": avg_train_loss.item(),
+                "valid_01": avg_valid_loss.item(),
+                "test_01": avg_test_loss.item(),
+                "cfg": cfg,
+            })
+
+        writer.add_scalar('loss_01/train', avg_train_loss.item(), epoch)
+        writer.add_scalar('loss_01/valid', avg_valid_loss.item(), epoch)
+        writer.add_scalar('loss_01/test', avg_test_loss.item(), epoch)
 
     writer.close()
     print("\nTraining finished.")
@@ -109,13 +122,33 @@ def get_noise_scheduler(total_steps, cfg):
     return NOISE_SCHEDULER_FACTORIES[noise_scheduler_id](total_steps, cfg)
 
 
+def atomic_write_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(to_jsonable(payload), indent=2, sort_keys=True))
+    tmp.replace(path)
+
+
+def to_jsonable(cfg):
+    out = {}
+    for k, v in cfg.items():
+        if isinstance(v, dict):
+            out[k] = to_jsonable(v)
+        elif isinstance(v, pathlib.Path):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
+
+
 if __name__ == '__main__':
     config = {
         'project_name': 'SSGD',
         'seed': 20250729,
         'dataset': 'CIFAR100',
         'noise_std': None,
-        'num_noise_samples': 16,
+        'num_noise_samples_batch': 64,
+        'num_noise_samples_accumulation': 2,
         'covariance_mode': "bineta",  # 'isotropic', 'sq_grads', 'inv_sq_grads', 'softmax_sq_grads', 'bineta', 'kaiming', 'xavier'
         'noise_scheduler': None,  # None, 'linear', 'partial'
         # 'noise_scheduler_start_step_ratio': 0.5,
@@ -157,3 +190,5 @@ if __name__ == '__main__':
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = sigma
                 main(config_specific)
+
+    print_results_table(config["log_dir"])

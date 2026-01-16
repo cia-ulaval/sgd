@@ -11,30 +11,40 @@ class ZeroOneLoss(torch.nn.Module):
 
 
 @torch.no_grad()
-def compute_01_loss(model, training_loader, validation_loader):
-    avg_tloss = 0.0
-    avg_vloss = 0.0
+def compute_01_loss(model, training_loader, validation_loader, test_loader):
+    avg_train_loss = 0.0
+    avg_valid_loss = 0.0
+    avg_test_loss = 0.0
     zo_loss = ZeroOneLoss()
 
-    for i, (tinputs, tlabels) in enumerate(training_loader, start=1):
+    for i, (inputs, labels) in enumerate(training_loader, start=1):
         if torch.cuda.is_available():
-            tinputs = tinputs.cuda()
-            tlabels = tlabels.cuda()
-        toutputs = model(tinputs)
-        tloss = zo_loss(toutputs, tlabels)
+            inputs = inputs.cuda()
+            labels = labels.cuda()
+        outputs = model(inputs)
+        loss = zo_loss(outputs, labels)
 
         ratio = 1 / i
-        avg_tloss = (1-ratio)*avg_tloss + ratio*tloss
+        avg_train_loss = (1-ratio)*avg_train_loss + ratio*loss
 
-    for i, (vinputs, vlabels) in enumerate(validation_loader, start=1):
-        # If GPU is available: make use of it
+    for i, (inputs, labels) in enumerate(validation_loader, start=1):
         if torch.cuda.is_available():
-            vinputs = vinputs.cuda()
-            vlabels = vlabels.cuda()
-        voutputs = model(vinputs)
-        vloss = zo_loss(voutputs, vlabels)
+            inputs = inputs.cuda()
+            labels = labels.cuda()
+        outputs = model(inputs)
+        loss = zo_loss(outputs, labels)
 
         ratio = 1 / i
-        avg_vloss = (1-ratio)*avg_vloss + ratio*vloss
+        avg_valid_loss = (1-ratio)*avg_valid_loss + ratio*loss
 
-    return avg_tloss, avg_vloss
+    for i, (inputs, labels) in enumerate(test_loader, start=1):
+        if torch.cuda.is_available():
+            inputs = inputs.cuda()
+            labels = labels.cuda()
+        outputs = model(inputs)
+        loss = zo_loss(outputs, labels)
+
+        ratio = 1 / i
+        avg_test_loss = (1-ratio)*avg_test_loss + ratio*loss
+
+    return avg_train_loss, avg_valid_loss, avg_test_loss
