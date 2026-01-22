@@ -2,9 +2,6 @@ import torch
 
 
 class ZeroOneLoss(torch.nn.Module):
-    def __init__(self):
-        super(ZeroOneLoss, self).__init__()
-
     def forward(self, input, target):
         input_rounded = torch.argmax(input, 1)
         return torch.mean((input_rounded != target).to(torch.float))
