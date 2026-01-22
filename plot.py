@@ -1,62 +1,47 @@
-"""
-helper to render plots from tensorboard logs dir
-"""
-import os
-from glob import glob
+import pathlib
 import argparse
 import matplotlib.pyplot as plt
+import glob
+from typing import List
 from tensorboard.backend.event_processing import event_accumulator
 
 
-def load_scalar_series(event_file, tag):
-    ea = event_accumulator.EventAccumulator(event_file, size_guidance={"scalars": 0})
-    ea.Reload()
+def main():
+    parser = argparse.ArgumentParser(description="Plot training/validation loss from TensorBoard event files.")
+    parser.add_argument("--logdir", default="logs_ablation", type=pathlib.Path, help="Root directory to search under.")
+    parser.add_argument("--suffix", "-s", action="append", required=True, help="Suffix to match (can be passed multiple times). Example: -s 0 -s 0.01")
+    parser.add_argument("--label", "-l", action="append", required=True, help="Label for each suffix (same count as --suffix).")
+    parser.add_argument("--title", "-t", default="Comparaison entre la descente classique et la descente bruitée sur CIFAR100", help="Label for each suffix (same count as --suffix).")
+    parser.add_argument("--out", "-o", default=None, type=pathlib.Path, help="Output image path.")
+    parser.add_argument("--no-show", action="store_true", help="Do not open a window; just save the figure.")
+    args = parser.parse_args()
 
-    scalars = ea.Tags().get("scalars", [])
-    if tag not in scalars:
-        raise KeyError(
-            f"Tag '{tag}' not found in {event_file}. Available scalar tags: {scalars}"
-        )
+    if len(args.label) != len(args.suffix):
+        raise SystemExit("Each --suffix <suffix> must be matched by a --label <label>.")
 
-    events = ea.Scalars(tag)
-    steps = [1 + e.step for e in events]
-    values = [e.value for e in events]
-    return steps, values
-
-
-def find_event_files(logdir, suffixes):
-    patterns = [os.path.join(logdir, "**", f"events.*{s}") for s in suffixes]
-    files = []
-    for p in patterns:
-        files.extend(glob(p, recursive=True))
-    return sorted(set(files))
+    generate_graphs(
+        logdir=args.logdir,
+        suffixes=args.suffix,
+        labels=args.label,
+        title=args.title,
+        out_path=args.out,
+        show=not args.no_show,
+    )
 
 
-def main(logdir, suffixes, labels=None, out_path=None, show=True):
+def generate_graphs(logdir: pathlib.Path, suffixes: List[str], labels: List[str], title: str, out_path: pathlib.Path, show: bool):
     event_files = find_event_files(logdir, suffixes)
-    event_files.reverse()
-
-    if len(event_files) < 2:
-        raise RuntimeError(
-            f"Expected at least 2 matching event files in {logdir}, found {len(event_files)}"
-        )
-
-    event_files = event_files[-2:]
-
-    if labels is None:
-        labels = [f"run {i}" for i in range(len(event_files))]
-
-    colors = ["blue", "orange"]
+    colors = ["blue", "orange", "purple", "yellow"]
 
     fig, axes = plt.subplots(1, 2, figsize=(2 * 8.6, 4.4), sharex=True)
     ax_train, ax_valid = axes
 
     for idx, event_file in enumerate(event_files):
         steps_valid, values_valid = load_scalar_series(event_file, "loss/valid")
-        ax_valid.plot(steps_valid, values_valid, label=labels[idx], color=colors[idx])
+        ax_valid.plot(steps_valid, values_valid, label=labels[idx], color=colors[idx % len(colors)])
 
         steps_train, values_train = load_scalar_series(event_file, "loss/train")
-        ax_train.plot(steps_train, values_train, label=labels[idx], color=colors[idx])
+        ax_train.plot(steps_train, values_train, label=labels[idx], color=colors[idx % len(colors)])
 
     ax_valid.set_xlabel("Époque")
     ax_valid.set_ylabel("Erreur de validation")
@@ -68,32 +53,46 @@ def main(logdir, suffixes, labels=None, out_path=None, show=True):
     ax_train.grid(True)
     ax_train.legend()
 
-    fig.suptitle("Comparaison entre la descente classique et la descente bruitée sur CIFAR100")
+    fig.suptitle(title)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     if out_path is not None:
-        fig.savefig(out_path, dpi=300)
+        out_path = out_path.resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(out_path), dpi=300)
 
     if show:
         plt.show()
 
 
+def find_event_files(logdir: pathlib.Path, suffixes: List[str]):
+    event_files: List[pathlib.Path] = []
+    for suffix in suffixes:
+        found_files = list(logdir.rglob(f"*{glob.escape(suffix)}/events.*"))
+        if not found_files:
+            raise RuntimeError(
+                f"Expected at least 1 matching event file in {logdir} for suffix '{suffix}'."
+            )
+
+        event_files.append(max(found_files, key=lambda p: p.stat().st_mtime))
+    return event_files
+
+
+def load_scalar_series(event_file: pathlib.Path, tag: str):
+    event_accu = event_accumulator.EventAccumulator(str(event_file), size_guidance={"scalars": 0})
+    event_accu.Reload()
+
+    scalars = event_accu.Tags().get("scalars", [])
+    if tag not in scalars:
+        raise KeyError(
+            f"Tag '{tag}' not found in {event_file}. Available scalar tags: {scalars}"
+        )
+
+    events = event_accu.Scalars(tag)
+    steps = [1 + e.step for e in events]
+    values = [e.value for e in events]
+    return steps, values
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot training/validation loss from TensorBoard event files.")
-    parser.add_argument("--logdir", default="logs_ablation", help="Root directory to search under.")
-    parser.add_argument("--suffix", "-s", action="append", required=True, help="Suffix to match (can be passed multiple times). Example: -s 0 -s 0.01")
-    parser.add_argument("--label", "-l", action="append", help="Label for each suffix (same count as --suffix).")
-    parser.add_argument("--out", default=None, type=str, help="Output image path.")
-    parser.add_argument("--no-show", action="store_true", help="Do not open a window; just save the figure.")
-    args = parser.parse_args()
-
-    if args.label is not None and len(args.label) != len(args.suffix):
-        raise SystemExit("--label must be provided the same number of times as --suffix")
-
-    main(
-        logdir=args.logdir,
-        suffixes=args.suffix,
-        labels=args.label,
-        out_path=args.out,
-        show=not args.no_show,
-    )
+    main()
