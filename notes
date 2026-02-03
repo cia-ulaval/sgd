@@ -6,4 +6,5 @@
 
 4) Garder un track de la magnitude de bruit qui est injecté (tester que les bruits n'explosent pas) -- mediane & moyenne
 
-5) 
+5) Considérer injection de bruit proportionnelle à la valeur des poids : petit en a moins, gros en a plus... Bineta avait fait ca a partir de la valeur des gradients au carrés (variabilité), 
+mais pt s'intéresser simplement aux gradients ou juste a la valeur réeelle des poids.
