@@ -78,23 +78,23 @@ def ablate_num_samples():
     for seed in seeds(num_seeds):
         config_seed = config.copy()
         config_seed["seed"] = seed
-        for num_samples_level in range(num_samples_levels):
-            num_samples_batch = 2**min(num_samples_level, num_samples_batch_max_level)
-            num_samples_accumulation = 2**max(0, num_samples_level - num_samples_batch_max_level)
+        for covariance_mode, base_noise_std in covariance_modes():
+            if base_noise_std is None:
+                config_specific = config_seed.copy()
+                config_specific["num_noise_samples_batch"] = 1
+                config_specific["num_noise_samples_accumulation"] = 1
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = None
+                do_one_run(config_specific)
+                continue
 
-            config_num_samples = config_seed.copy()
-            config_num_samples["num_noise_samples_batch"] = num_samples_batch
-            config_num_samples["num_noise_samples_accumulation"] = num_samples_accumulation
+            for num_samples_level in range(num_samples_levels):
+                num_samples_batch = 2 ** min(num_samples_level, num_samples_batch_max_level)
+                num_samples_accumulation = 2 ** max(0, num_samples_level - num_samples_batch_max_level)
 
-            for covariance_mode, base_noise_std in covariance_modes():
-                if base_noise_std is None:
-                    config_specific = config_num_samples.copy()
-                    config_specific["covariance_mode"] = covariance_mode
-                    config_specific["noise_std"] = None
-                    do_one_run(config_specific)
-                    continue
-
-                config_specific = config_num_samples.copy()
+                config_specific = config_seed.copy()
+                config_specific["num_noise_samples_batch"] = num_samples_batch
+                config_specific["num_noise_samples_accumulation"] = num_samples_accumulation
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = base_noise_std * noise_std_l5_scale
                 do_one_run(config_specific)
