@@ -69,8 +69,6 @@ def print_results_table(log_dir: pathlib.Path):
 def get_runs(
     logdir: str | pathlib.Path,
     *run_name_filters: str,
-    scalar_whitelist: Optional[Sequence[str]] = None,
-    include_empty: bool = False,
 ) -> Dict[str, Dict[str, List[float]]]:
     """
     Filters runs by substring match on the run directory name.
@@ -82,8 +80,6 @@ def get_runs(
     Args:
       logdir: root directory containing run subdirectories.
       *run_name_filters: all must appear in the run directory name for it to match.
-      scalar_whitelist: optional list of scalar tags to include.
-      include_empty: if False, drops runs with no scalars (or no event files).
 
     Returns:
       Dict[run_name, Dict[scalar_tag, List[float]]]
@@ -95,14 +91,13 @@ def get_runs(
         raise FileNotFoundError(f"logdir does not exist: {logdir}")
 
     result = {}
-
     for run_dir in sorted([p for p in logdir.iterdir() if p.is_dir()]):
         run_name = run_dir.name
         if run_name_filters and not all(s in run_name for s in run_name_filters):
             continue
 
-        scalars = _read_scalars_from_run(run_dir, scalar_whitelist=scalar_whitelist)
-        if scalars or include_empty:
+        scalars = _read_scalars_from_run(run_dir)
+        if scalars:
             result[run_name] = scalars
 
     return result
@@ -111,7 +106,6 @@ def get_runs(
 def _read_scalars_from_run(
     run_dir: pathlib.Path,
     *,
-    scalar_whitelist: Optional[Sequence[str]] = None,
     size_guidance_scalars: int = 0,
 ) -> Dict[str, List[float]]:
     """
@@ -133,12 +127,8 @@ def _read_scalars_from_run(
     acc.Reload()
 
     scalar_tags = acc.Tags().get("scalars", [])
-    if scalar_whitelist is not None:
-        allowed = set(scalar_whitelist)
-        scalar_tags = [t for t in scalar_tags if t in allowed]
-
-    out: Dict[str, List[float]] = {}
+    result = {}
     for tag in scalar_tags:
         events = acc.Scalars(tag)
-        out[tag] = [float(e.value) for e in events]
-    return out
+        result[tag] = [float(e.value) for e in events]
+    return result
