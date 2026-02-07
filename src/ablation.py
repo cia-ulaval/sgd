@@ -76,8 +76,8 @@ def get_runs(
     Filters runs by substring match on the run directory name.
 
     Example:
-      runs = get_runs("logs", "method=abc", "noise_std=0.5")
-      # runs: {run_name: {scalar_tag: [values...]}}.
+      runs = get_runs("logs", "covarianceMODE=isotropic", "noiseSTD=0.04")
+      # runs: {"...noiseSTD=0.04_covarianceMODE=isotropic...": {"loss_01/train": [values...], ...}, ...}.
 
     Args:
       logdir: root directory containing run subdirectories.
