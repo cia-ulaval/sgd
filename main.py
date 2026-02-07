@@ -102,7 +102,7 @@ def ablate_num_samples():
     print_results_table(logdir)
 
 
-def create_base_config(log_dir):
+def create_base_config(log_dir: pathlib.Path):
     return {
         'project_name': 'SSGD',
         'seed': 20250729,
