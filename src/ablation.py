@@ -105,8 +105,6 @@ def get_runs(
 
 def _read_scalars_from_run(
     run_dir: pathlib.Path,
-    *,
-    size_guidance_scalars: int = 0,
 ) -> Dict[str, List[float]]:
     """
     Returns: dict {scalar_tag: [v0, v1, ...]} for one run.
@@ -122,7 +120,7 @@ def _read_scalars_from_run(
 
     acc = EventAccumulator(
         str(run_dir),
-        size_guidance={"scalars": size_guidance_scalars},
+        size_guidance={"scalars": 0},
     )
     acc.Reload()
 
