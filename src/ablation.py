@@ -66,10 +66,7 @@ def print_results_table(log_dir: pathlib.Path):
             print(f"  {m}: {s} -> {mean:.4f} (n={n})")
 
 
-def get_runs(
-    logdir: str | pathlib.Path,
-    *run_name_filters: str,
-) -> Dict[str, Dict[str, List[float]]]:
+def get_runs(logdir: str | pathlib.Path, *run_name_filters: str) -> Dict[str, Dict[str, List[float]]]:
     """
     Filters runs by substring match on the run directory name.
 
@@ -103,9 +100,7 @@ def get_runs(
     return result
 
 
-def _read_scalars_from_run(
-    run_dir: pathlib.Path,
-) -> Dict[str, List[float]]:
+def _read_scalars_from_run(run_dir: pathlib.Path) -> Dict[str, List[float]]:
     """
     Returns: dict {scalar_tag: [v0, v1, ...]} for one run.
     - scalar_whitelist: if provided, only include scalar tags in this list.
