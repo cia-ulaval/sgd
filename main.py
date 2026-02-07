@@ -120,12 +120,12 @@ def create_base_config(log_dir):
     }
 
 
-def seeds(num_seeds, base_seed: int = 20250729) -> Generator[int]:
+def seeds(num_seeds: int, base_seed: int = 20250729) -> Generator[int]:
     for i in range(num_seeds):
         yield base_seed + i
 
 
-def sigmas(base_noise, noise_levels) -> Generator[float]:
+def sigmas(base_noise: float, noise_levels: int) -> Generator[float]:
     # sigma scaling factors follow a geometric series
     noise_std_scale_down_levels = 3
     for noise_std_scale_up_levels in range(noise_levels):
