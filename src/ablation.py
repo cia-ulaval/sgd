@@ -92,7 +92,7 @@ def get_runs(
         logdir = pathlib.Path(logdir).resolve()
 
     if not logdir.exists():
-        raise FileNotFoundError(f"root_logdir does not exist: {logdir}")
+        raise FileNotFoundError(f"logdir does not exist: {logdir}")
 
     result = {}
 
