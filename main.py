@@ -120,12 +120,12 @@ def create_base_config(log_dir: pathlib.Path):
     }
 
 
-def seeds(num_seeds: int, base_seed: int = 20250729) -> Generator[int]:
+def seeds(num_seeds: int, base_seed: int = 20250729) -> Generator[int, None, None]:
     for i in range(num_seeds):
         yield base_seed + i
 
 
-def sigmas(base_noise: float, noise_levels: int) -> Generator[float]:
+def sigmas(base_noise: float, noise_levels: int) -> Generator[float, None, None]:
     # sigma scaling factors follow a geometric series
     noise_std_scale_down_levels = 3
     for noise_std_scale_up_levels in range(noise_levels):
@@ -133,7 +133,7 @@ def sigmas(base_noise: float, noise_levels: int) -> Generator[float]:
         yield sigma
 
 
-def covariance_modes() -> Generator[Tuple[str, Optional[float]]]:
+def covariance_modes() -> Generator[Tuple[str, Optional[float]], None, None]:
     yield from (
         ("isotropic", None),  # no-noise baseline
         ("isotropic", 0.01),
