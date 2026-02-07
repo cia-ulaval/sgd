@@ -1,5 +1,7 @@
 import contextlib
 import pathlib
+from typing import Generator, Optional, Tuple
+
 import torch
 import json
 from torch.utils.tensorboard import SummaryWriter
@@ -37,7 +39,7 @@ NOISE_SCHEDULER_FACTORIES = {
 }
 
 
-def ablate_methods():
+def ablate_covariance_modes():
     logdir = pathlib.Path("./logs_ablation")
     config = create_base_config(logdir)
 
@@ -45,19 +47,13 @@ def ablate_methods():
     base_seed = 20250729
     seeds = [base_seed + i for i in range(num_seeds)]
 
-    noise_levels = 7
+    noise_std_levels = 7
     scale_down_levels = 3
 
     for seed in seeds:
         config_seed = config.copy()
         config_seed["seed"] = seed
-        for covariance_mode, base_noise_std in (
-            ("isotropic", None),  # no-noise baseline
-            ("isotropic", 0.01),
-            ("sq_grads", 0.01),
-            ("inv_sq_grads", 0.01),
-            ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
-        ):
+        for covariance_mode, base_noise_std in covariance_modes():
             if base_noise_std is None:
                 config_specific = config_seed.copy()
                 config_specific["covariance_mode"] = covariance_mode
@@ -66,9 +62,7 @@ def ablate_methods():
                 continue
 
             # sigma scaling factors follow a geometric series
-            noise_std_pre_scale = base_noise_std / 2**scale_down_levels
-            for scale_up_levels in range(noise_levels):
-                sigma = noise_std_pre_scale * 2**scale_up_levels
+            for sigma in sigmas(base_noise_std / 2**scale_down_levels, noise_std_levels):
                 config_specific = config_seed.copy()
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = sigma
@@ -83,32 +77,21 @@ def ablate_num_samples():
 
     config["seed"] = 20250729
 
-    num_samples_levels = 8  # 1 to 256
+    num_samples_levels = 9  # 1 to 256
     num_samples_batch_max_level = 6  # 64
 
     noise_std_levels = 7
     noise_std_scale_down_levels = 3
 
-    for num_samples_level in range(num_samples_levels+1):
-        # ensure batch is max 64 and fold the rest into gradient accumulation steps
-        if num_samples_level > num_samples_batch_max_level:
-            num_samples_batch = 2**num_samples_batch_max_level
-            num_samples_accumulation = 2**(num_samples_level - num_samples_batch_max_level)
-        else:
-            num_samples_batch = 2**num_samples_level
-            num_samples_accumulation = 1
+    for num_samples_level in range(num_samples_levels):
+        num_samples_batch = 2**min(num_samples_level, num_samples_batch_max_level)
+        num_samples_accumulation = 2**max(0, num_samples_level - num_samples_batch_max_level)
 
         config_num_samples = config.copy()
         config_num_samples["num_noise_samples_batch"] = num_samples_batch
         config_num_samples["num_noise_samples_accumulation"] = num_samples_accumulation
 
-        for covariance_mode, base_noise_std in (
-            ("isotropic", None),  # no-noise baseline
-            ("isotropic", 0.01),
-            ("sq_grads", 0.01),
-            ("inv_sq_grads", 0.01),
-            ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
-        ):
+        for covariance_mode, base_noise_std in covariance_modes():
             if base_noise_std is None:
                 config_specific = config_num_samples.copy()
                 config_specific["covariance_mode"] = covariance_mode
@@ -116,10 +99,7 @@ def ablate_num_samples():
                 do_one_run(config_specific)
                 continue
 
-            # sigma scaling factors follow a geometric series
-            noise_std_pre_scale = base_noise_std / 2**noise_std_scale_down_levels
-            for noise_std_scale_up_levels in range(noise_std_levels):
-                sigma = noise_std_pre_scale * 2**noise_std_scale_up_levels
+            for sigma in sigmas(base_noise_std / 2**noise_std_scale_down_levels, noise_std_levels):
                 config_specific = config_num_samples.copy()
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = sigma
@@ -144,6 +124,24 @@ def create_base_config(log_dir):
         'lr': 5e-4,
         'log_dir': log_dir,
     }
+
+
+def sigmas(base_noise, noise_levels) -> Generator[float]:
+    # sigma scaling factors follow a geometric series
+    noise_std_pre_scale = base_noise
+    for noise_std_scale_up_levels in range(noise_levels):
+        sigma = noise_std_pre_scale * 2**noise_std_scale_up_levels
+        yield sigma
+
+
+def covariance_modes() -> Generator[Tuple[str, Optional[float]]]:
+    yield from (
+        ("isotropic", None),  # no-noise baseline
+        ("isotropic", 0.01),
+        ("sq_grads", 0.01),
+        ("inv_sq_grads", 0.01),
+        ("bineta", 7.5e+2**(1/2)),  # approximate same-scale as other methods
+    )
 
 
 def do_one_run(cfg):
@@ -251,4 +249,4 @@ def to_jsonable(cfg):
 
 
 if __name__ == '__main__':
-    ablate_methods()
+    ablate_num_samples()
