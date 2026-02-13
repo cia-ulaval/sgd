@@ -1,11 +1,9 @@
 import contextlib
 import pathlib
-from typing import Generator, Optional, Tuple
-
 import torch
 import json
 from torch.utils.tensorboard import SummaryWriter
-from src.ablation import print_results_table
+from src.ablation import print_results_table, NoiseLevelAxis, NumSamplesAxis, FieldAxis
 from src.noise import NoiseHook
 from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler
 from src.utils import create_run_name
@@ -19,6 +17,7 @@ from src.variance_provider import (
     InvAdamSqGradsVarianceProvider, KaimingVarianceProvider, SoftmaxAdamSqGradsVarianceProvider, XavierVarianceProvider,
 )
 from tqdm import trange
+from typing import Generator, Optional, Tuple
 
 
 VARIANCE_PROVIDER_FACTORIES = {
@@ -63,7 +62,7 @@ def ablate_covariance_modes():
                 config_specific["noise_std"] = sigma
                 do_one_run(config_specific)
 
-    print_results_table(logdir)
+    print_results_table(logdir, x_axis=NumSamplesAxis(), y_axis=FieldAxis("covariance_mode"))
 
 
 def ablate_num_samples():
@@ -99,7 +98,7 @@ def ablate_num_samples():
                 config_specific["noise_std"] = base_noise_std * noise_std_l5_scale
                 do_one_run(config_specific)
 
-    print_results_table(logdir)
+    print_results_table(logdir, x_axis=NoiseLevelAxis(), y_axis=FieldAxis("covariance_mode"))
 
 
 def create_base_config(log_dir: pathlib.Path):

@@ -1,10 +1,9 @@
-import contextlib
 import functools
 import torch
 import torch.nn as nn
 from src.noise_scheduler import NoiseScheduler
 from src.variance_provider import ParamVarianceProvider
-from typing import ContextManager, Optional, Tuple
+from typing import Optional, Tuple
 
 
 class NoiseHook:
