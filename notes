@@ -1,10 +1,1 @@
-1) Considerer ++ de bruit au debut de l'entrainement et qui diminue au fur et à mesure. genre 1/t ou 1/sqrt(t) ou t est epoch. Tester plusieurs paramètres.
-
-2) reduire/augmenter variance de loi normale et tester avec un graphe des performances
-
-3) Faire en sorte que l'on injecte du bruit différent pour chaque item dans la batch. Voir article benjamin
-
-4) Garder un track de la magnitude de bruit qui est injecté (tester que les bruits n'explosent pas) -- mediane & moyenne
-
-5) Considérer injection de bruit proportionnelle à la valeur des poids : petit en a moins, gros en a plus... Bineta avait fait ca a partir de la valeur des gradients au carrés (variabilité), 
-mais pt s'intéresser simplement aux gradients ou juste a la valeur réeelle des poids.
+1) Essayer méthode d'approximation Laplacienne pour injecter bruit sur output. Essayer aussi méthode de Benjamin de sommation : littéralement équivalent input-output de bruit suivant une distribution de Laplace.
