@@ -1,98 +1,131 @@
 import pathlib
 import argparse
+import re
+from collections import defaultdict
+import numpy as np
 import matplotlib.pyplot as plt
-import glob
-from typing import List
-from tensorboard.backend.event_processing import event_accumulator
+from src.ablation import get_runs
 
+def _get_param_from_run_name(run_name: str, param: str) -> str | None:
+    """Extracts a parameter value from a run name string."""
+    match = re.search(f"{param}=([^__]*)", run_name)
+    if match:
+        value = match.group(1)
+        if value == "None":
+            return None
+        return value
+    return None
 
-def main():
-    parser = argparse.ArgumentParser(description="Plot training/validation loss from TensorBoard event files.")
-    parser.add_argument("--logdir", default="logs_ablation", type=pathlib.Path, help="Root directory to search under.")
-    parser.add_argument("--suffix", "-s", action="append", required=True, help="Suffix to match (can be passed multiple times). Example: -s 0 -s 0.01")
-    parser.add_argument("--label", "-l", action="append", required=True, help="Label for each suffix (same count as --suffix).")
-    parser.add_argument("--title", "-t", default="Comparaison entre la descente classique et la descente bruitée sur CIFAR100", help="Label for each suffix (same count as --suffix).")
-    parser.add_argument("--out", "-o", default=None, type=pathlib.Path, help="Output image path.")
-    parser.add_argument("--no-show", action="store_true", help="Do not open a window; just save the figure.")
-    args = parser.parse_args()
+def plot_results(
+    log_dir: pathlib.Path,
+    method: str,
+    performance_metric: str = "loss_01/test",
+    title: str | None = None,
+    out_path: pathlib.Path | None = None,
+    show: bool = True,
+):
+    """
+    Generates and displays a plot of test performance vs. epoch for a given method,
+    averaged over different random seeds.
 
-    if len(args.label) != len(args.suffix):
-        raise SystemExit("Each --suffix <suffix> must be matched by a --label <label>.")
+    Args:
+        log_dir: The root directory containing the log files.
+        method: The method to plot (e.g., 'isotropic', 'bineta').
+        performance_metric: The name of the scalar metric to plot from TensorBoard logs.
+        title: The title of the plot.
+        out_path: Path to save the generated plot image.
+        show: Whether to display the plot in a window.
+    """
+    # 1. Get all runs for the specified method
+    all_runs = get_runs(log_dir, f"covarianceMODE={method}")
+    if not all_runs:
+        print(f"No runs found for method '{method}' in log directory '{log_dir}'.")
+        return
 
-    generate_graphs(
-        logdir=args.logdir,
-        suffixes=args.suffix,
-        labels=args.label,
-        title=args.title,
-        out_path=args.out,
-        show=not args.no_show,
-    )
+    # 2. Group runs by noise_std
+    runs_by_noise = defaultdict(list)
+    for run_name, run_data in all_runs.items():
+        if performance_metric not in run_data:
+            print(f"Metric '{performance_metric}' not found in run '{run_name}'. Skipping.")
+            continue
+        
+        noise_std_str = _get_param_from_run_name(run_name, "noiseSTD")
+        try:
+            noise_std = float(noise_std_str) if noise_std_str is not None else "None"
+            runs_by_noise[noise_std].append(run_data[performance_metric])
+        except (ValueError, TypeError):
+            print(f"Could not parse noiseSTD '{noise_std_str}' from run '{run_name}'. Skipping.")
+            continue
 
+    # 3. Plotting
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-def generate_graphs(logdir: pathlib.Path, suffixes: List[str], labels: List[str], title: str, out_path: pathlib.Path, show: bool):
-    event_files = find_event_files(logdir, suffixes)
-    colors = ["blue", "orange", "purple", "yellow"]
+    sorted_noise_keys = sorted(runs_by_noise.keys(), key=lambda x: (isinstance(x, str), x))
 
-    fig, axes = plt.subplots(1, 2, figsize=(2 * 8.6, 4.4), sharex=True)
-    ax_train, ax_valid = axes
+    for noise_std in sorted_noise_keys:
+        runs = runs_by_noise[noise_std]
+        
+        # Ensure all runs for a given noise_std have the same length by truncating to the minimum length
+        min_len = min(len(run) for run in runs)
+        runs_array = np.array([run[:min_len] for run in runs])
 
-    for idx, event_file in enumerate(event_files):
-        steps_valid, values_valid = load_scalar_series(event_file, "loss/valid")
-        ax_valid.plot(steps_valid, values_valid, label=labels[idx], color=colors[idx % len(colors)])
+        mean = np.mean(runs_array, axis=0)
+        std = np.std(runs_array, axis=0)
+        epochs = np.arange(1, len(mean) + 1)
 
-        steps_train, values_train = load_scalar_series(event_file, "loss/train")
-        ax_train.plot(steps_train, values_train, label=labels[idx], color=colors[idx % len(colors)])
+        line, = ax.plot(epochs, mean, label=f"noise_std={noise_std}")
+        ax.fill_between(epochs, mean - std, mean + std, alpha=0.2, color=line.get_color())
 
-    ax_valid.set_xlabel("Époque")
-    ax_valid.set_ylabel("Erreur de validation")
-    ax_valid.grid(True)
-    ax_valid.legend()
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(f"Test Performance ({performance_metric})")
+    ax.set_title(title if title else f"Performance of method '{method}'")
+    ax.grid(True)
+    ax.legend()
+    fig.tight_layout()
 
-    ax_train.set_xlabel("Époque")
-    ax_train.set_ylabel("Erreur d'entreinement")
-    ax_train.grid(True)
-    ax_train.legend()
-
-    fig.suptitle(title)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-
-    if out_path is not None:
-        out_path = out_path.resolve()
+    # 4. Save and/or show the plot
+    if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(out_path), dpi=300)
+        fig.savefig(out_path, dpi=300)
+        print(f"Plot saved to {out_path}")
 
     if show:
         plt.show()
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Plot average test performance for a given method across different noise levels."
+    )
+    parser.add_argument(
+        "--logdir",
+        default="logs_ablation",
+        type=pathlib.Path,
+        help="Root directory where run logs are stored.",
+    )
+    parser.add_argument(
+        "--method",
+        required=True,
+        help="Method to plot (e.g., 'isotropic', 'bineta', 'inv_sq_grads').",
+    )
+    parser.add_argument(
+        "--metric",
+        default="loss_01/test",
+        help="The performance metric to plot from TensorBoard scalars.",
+    )
+    parser.add_argument("--title", help="Optional title for the plot.")
+    parser.add_argument("--out", type=pathlib.Path, help="Optional path to save the plot image.")
+    parser.add_argument("--no-show", action="store_true", help="Do not display the plot window.")
+    
+    args = parser.parse_args()
 
-def find_event_files(logdir: pathlib.Path, suffixes: List[str]):
-    event_files: List[pathlib.Path] = []
-    for suffix in suffixes:
-        found_files = list(logdir.rglob(f"*{glob.escape(suffix)}/events.*"))
-        if not found_files:
-            raise RuntimeError(
-                f"Expected at least 1 matching event file in {logdir} for suffix '{suffix}'."
-            )
-
-        event_files.append(max(found_files, key=lambda p: p.stat().st_mtime))
-    return event_files
-
-
-def load_scalar_series(event_file: pathlib.Path, tag: str):
-    event_accu = event_accumulator.EventAccumulator(str(event_file), size_guidance={"scalars": 0})
-    event_accu.Reload()
-
-    scalars = event_accu.Tags().get("scalars", [])
-    if tag not in scalars:
-        raise KeyError(
-            f"Tag '{tag}' not found in {event_file}. Available scalar tags: {scalars}"
-        )
-
-    events = event_accu.Scalars(tag)
-    steps = [1 + e.step for e in events]
-    values = [e.value for e in events]
-    return steps, values
-
+    plot_results(
+        log_dir=args.logdir,
+        method=args.method,
+        performance_metric=args.metric,
+        title=args.title,
+        out_path=args.out,
+        show=not args.no_show,
+    )
 
 if __name__ == "__main__":
     main()
