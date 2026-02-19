@@ -19,6 +19,8 @@ def _get_param_from_run_name(run_name: str, param: str) -> str | None:
 def plot_results(
     log_dir: pathlib.Path,
     method: str,
+    noise_std: str | None = None,
+    group_by: str = "noiseSTD",
     performance_metric: str = "loss_01/test",
     title: str | None = None,
     out_path: pathlib.Path | None = None,
@@ -31,41 +33,57 @@ def plot_results(
     Args:
         log_dir: The root directory containing the log files.
         method: The method to plot (e.g., 'isotropic', 'bineta').
+        noise_std: If provided, only plot runs with this specific noise standard deviation.
+        group_by: The parameter to group runs by (e.g., 'noiseSTD', 'numSAMPLES').
         performance_metric: The name of the scalar metric to plot from TensorBoard logs.
         title: The title of the plot.
         out_path: Path to save the generated plot image.
         show: Whether to display the plot in a window.
     """
-    # 1. Get all runs for the specified method
-    all_runs = get_runs(log_dir, f"covarianceMODE={method}")
+
+    # 1. Prepare filters for get_runs
+    filters = [f"covarianceMODE={method}"]
+    if noise_std is not None:
+        filters.append(f"noiseSTD={noise_std}")
+
+    # 2. Get all runs matching the filters
+    all_runs = get_runs(log_dir, *filters)
+
+
     if not all_runs:
-        print(f"No runs found for method '{method}' in log directory '{log_dir}'.")
+        filter_str = " AND ".join(filters)
+        print(f"No runs found matching filters: '{filter_str}' in directory '{log_dir}'.")
         return
 
-    # 2. Group runs by noise_std
-    runs_by_noise = defaultdict(list)
+    # 2. Group runs by the specified parameter
+    runs_by_group = defaultdict(list)
     for run_name, run_data in all_runs.items():
         if performance_metric not in run_data:
             print(f"Metric '{performance_metric}' not found in run '{run_name}'. Skipping.")
             continue
         
-        noise_std_str = _get_param_from_run_name(run_name, "noiseSTD")
-        try:
-            noise_std = float(noise_std_str) if noise_std_str is not None else "None"
-            runs_by_noise[noise_std].append(run_data[performance_metric])
-        except (ValueError, TypeError):
-            print(f"Could not parse noiseSTD '{noise_std_str}' from run '{run_name}'. Skipping.")
+        param_value_str = _get_param_from_run_name(run_name, group_by)
+        if param_value_str is None:
+            print(f"Could not find parameter '{group_by}' in run '{run_name}'. Skipping.")
             continue
+        
+        try:
+            # Attempt to convert to float, but keep as string if it fails (e.g., for 'None')
+            param_value = float(param_value_str)
+        except (ValueError, TypeError):
+            param_value = param_value_str
+
+        runs_by_group[param_value].append(run_data[performance_metric])
 
     # 3. Plotting
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    sorted_noise_keys = sorted(runs_by_noise.keys(), key=lambda x: (isinstance(x, str), x))
+    sorted_group_keys = sorted(runs_by_group.keys(), key=lambda x: (isinstance(x, str), x))
 
-    for noise_std in sorted_noise_keys:
-        runs = runs_by_noise[noise_std]
+    for group_val in sorted_group_keys:
+        runs = runs_by_group[group_val]
         
-        # Ensure all runs for a given noise_std have the same length by truncating to the minimum length
+        # Ensure all runs for a given group have the same length by truncating to the minimum length
         min_len = min(len(run) for run in runs)
         runs_array = np.array([run[:min_len] for run in runs])
 
@@ -73,12 +91,12 @@ def plot_results(
         std = np.std(runs_array, axis=0)
         epochs = np.arange(1, len(mean) + 1)
 
-        line, = ax.plot(epochs, mean, label=f"noise_std={noise_std}")
+        line, = ax.plot(epochs, mean, label=f"{group_by}={group_val}")
         ax.fill_between(epochs, mean - std, mean + std, alpha=0.2, color=line.get_color())
 
     ax.set_xlabel("Epoch")
     ax.set_ylabel(f"Test Performance ({performance_metric})")
-    ax.set_title(title if title else f"Performance of method '{method}'")
+    ax.set_title(title if title else f"Performance of method '{method}' grouped by {group_by}")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -94,7 +112,7 @@ def plot_results(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot average test performance for a given method across different noise levels."
+        description="Plot average test performance for a given method across different parameter values."
     )
     parser.add_argument(
         "--logdir",
@@ -106,6 +124,15 @@ def main():
         "--method",
         required=True,
         help="Method to plot (e.g., 'isotropic', 'bineta', 'inv_sq_grads').",
+    )
+    parser.add_argument(
+        "--noise-std",
+        help="Optional: Filter by a specific noise standard deviation (e.g., '0.01').",
+    )
+    parser.add_argument(
+        "--group-by",
+        default="noiseSTD",
+        help="Parameter to group the runs by (e.g., 'noiseSTD', 'numSAMPLES').",
     )
     parser.add_argument(
         "--metric",
@@ -121,6 +148,8 @@ def main():
     plot_results(
         log_dir=args.logdir,
         method=args.method,
+        noise_std=args.noise_std,
+        group_by=args.group_by,
         performance_metric=args.metric,
         title=args.title,
         out_path=args.out,
