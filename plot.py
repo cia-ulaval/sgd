@@ -18,7 +18,7 @@ def _get_param_from_run_name(run_name: str, param: str) -> str | None:
 
 def plot_results(
     log_dir: pathlib.Path,
-    method: str,
+    method: str | None = None,
     noise_std: str | None = None,
     group_by: str = "noiseSTD",
     performance_metric: str = "loss_01/test",
@@ -32,7 +32,7 @@ def plot_results(
 
     Args:
         log_dir: The root directory containing the log files.
-        method: The method to plot (e.g., 'isotropic', 'bineta').
+        method: The method to plot (e.g., 'isotropic', 'bineta'). If None, compare all methods.
         noise_std: If provided, only plot runs with this specific noise standard deviation.
         group_by: The parameter to group runs by (e.g., 'noiseSTD', 'numSAMPLES').
         performance_metric: The name of the scalar metric to plot from TensorBoard logs.
@@ -42,7 +42,9 @@ def plot_results(
     """
 
     # 1. Prepare filters for get_runs
-    filters = [f"covarianceMODE={method}"]
+    filters = []
+    if method is not None:
+        filters.append(f"covarianceMODE={method}")
     if noise_std is not None:
         filters.append(f"noiseSTD={noise_std}")
 
@@ -51,7 +53,7 @@ def plot_results(
 
 
     if not all_runs:
-        filter_str = " AND ".join(filters)
+        filter_str = " AND ".join(filters) if filters else "none"
         print(f"No runs found matching filters: '{filter_str}' in directory '{log_dir}'.")
         return
 
@@ -96,7 +98,12 @@ def plot_results(
 
     ax.set_xlabel("Epoch")
     ax.set_ylabel(f"Test Performance ({performance_metric})")
-    ax.set_title(title if title else f"Performance of method '{method}' grouped by {group_by}")
+    if title:
+        ax.set_title(title)
+    elif method is not None:
+        ax.set_title(f"Performance of method '{method}' grouped by {group_by}")
+    else:
+        ax.set_title(f"Comparison of all methods grouped by {group_by}")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -122,8 +129,7 @@ def main():
     )
     parser.add_argument(
         "--method",
-        required=True,
-        help="Method to plot (e.g., 'isotropic', 'bineta', 'inv_sq_grads').",
+        help="Optional: Method to plot (e.g., 'isotropic', 'bineta', 'inv_sq_grads').",
     )
     parser.add_argument(
         "--noise-std",
