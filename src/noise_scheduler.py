@@ -42,8 +42,9 @@ class PartialNoiseScheduler(NoiseScheduler):
 
 
 class TrainValidDiffNoiseScheduler(NoiseScheduler):
-    def __init__(self):
+    def __init__(self, gamma: float):
         self.current_scalar = 1.0
+        self.gamma = gamma
 
     def step(self):
         pass
@@ -52,4 +53,4 @@ class TrainValidDiffNoiseScheduler(NoiseScheduler):
         return self.current_scalar
 
     def update_from_losses(self, train: float, valid: float) -> None:
-        self.current_scalar = math.exp(valid - train)
+        self.current_scalar = math.exp((valid - train) * self.gamma)

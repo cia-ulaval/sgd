@@ -36,7 +36,7 @@ NOISE_SCHEDULER_FACTORIES = {
     None: lambda *_args: None,
     "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
     "partial": lambda total_steps, cfg: PartialNoiseScheduler(total_steps, cfg.get('noise_scheduler_start_step_ratio', 0.0), cfg.get('noise_scheduler_end_step_ratio', 1.0)),
-    "train_valid_differential": lambda total_steps, cfg: TrainValidDiffNoiseScheduler(),
+    "train_valid_differential": lambda total_steps, cfg: TrainValidDiffNoiseScheduler(cfg.get("noise_scheduler_gamma")),
 }
 
 
@@ -109,7 +109,6 @@ def ablate_train_valid_differential():
     config["num_noise_samples_batch"] = 1
     config["num_noise_samples_accumulation"] = 1
     config["covariance_mode"] = "isotropic"
-    config["noise_scheduler"] = "train_valid_differential"
 
     num_seeds = 5
     base_noise_std = 0.01
@@ -119,9 +118,14 @@ def ablate_train_valid_differential():
         config_seed = config.copy()
         config_seed["seed"] = seed
 
-        for sigma in sigmas(base_noise_std, noise_std_levels):
+        for sigma in (None, *sigmas(base_noise_std, noise_std_levels)):
             config_specific = config_seed.copy()
             config_specific["noise_std"] = sigma
+            if sigma is not None:
+                for gamma in (0.0, sigmas(1.0, 7)):
+                    config_specific["noise_scheduler"] = "train_valid_differential"
+                    config_specific["noise_scheduler_gamma"] = gamma
+
             do_one_run(config_specific)
 
     print_results_table(logdir)
