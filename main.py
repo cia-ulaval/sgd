@@ -7,7 +7,7 @@ import json
 from torch.utils.tensorboard import SummaryWriter
 from src.ablation import print_results_table
 from src.noise import NoiseHook
-from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler
+from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler, TrainValidDiffNoiseScheduler
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
@@ -36,6 +36,7 @@ NOISE_SCHEDULER_FACTORIES = {
     None: lambda *_args: None,
     "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
     "partial": lambda total_steps, cfg: PartialNoiseScheduler(total_steps, cfg.get('noise_scheduler_start_step_ratio', 0.0), cfg.get('noise_scheduler_end_step_ratio', 1.0)),
+    "train_valid_differential": lambda total_steps, cfg: TrainValidDiffNoiseScheduler(),
 }
 
 
@@ -98,6 +99,30 @@ def ablate_num_samples():
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = base_noise_std * noise_std_l5_scale
                 do_one_run(config_specific)
+
+    print_results_table(logdir)
+
+
+def ablate_train_valid_differential():
+    logdir = pathlib.Path("./logs_ablation_train_valid_differential")
+    config = create_base_config(logdir)
+    config["num_noise_samples_batch"] = 1
+    config["num_noise_samples_accumulation"] = 1
+    config["covariance_mode"] = "isotropic"
+    config["noise_scheduler"] = "train_valid_differential"
+
+    num_seeds = 5
+    base_noise_std = 0.01
+    noise_std_levels = 7
+
+    for seed in seeds(num_seeds):
+        config_seed = config.copy()
+        config_seed["seed"] = seed
+
+        for sigma in sigmas(base_noise_std, noise_std_levels):
+            config_specific = config_seed.copy()
+            config_specific["noise_std"] = sigma
+            do_one_run(config_specific)
 
     print_results_table(logdir)
 
@@ -173,6 +198,8 @@ def do_one_run(cfg):
 
         model.eval()
         avg_train_loss, avg_valid_loss, avg_test_loss = compute_01_loss(model, training_loader, validation_loader, test_loader)
+        if noise_scheduler is not None:
+            noise_scheduler.update_from_losses(avg_train_loss.item(), avg_valid_loss.item())
 
         if avg_valid_loss < best_valid_loss:
             best_valid_loss = avg_valid_loss
@@ -248,4 +275,4 @@ def to_jsonable(cfg):
 
 
 if __name__ == '__main__':
-    ablate_num_samples()
+    ablate_train_valid_differential()
