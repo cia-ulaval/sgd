@@ -213,7 +213,7 @@ def config_equivalence_key(config: Dict[str, Any]) -> str:
 
 
 def canonical_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    return {field: config.get(field, None) for field in CANONICAL_CONFIG_FIELDS}
+    return {field: config.get(field) for field in CANONICAL_CONFIG_FIELDS}
 
 
 def read_config_from_run_directory(run_directory: pathlib.Path) -> Optional[Dict[str, Any]]:
@@ -243,10 +243,12 @@ def best_test_at_min_valid(scalars: Run) -> Optional[float]:
 def mean_and_standard_deviation(xs: List[float]) -> Tuple[Optional[float], Optional[float]]:
     n = len(xs)
     if n == 0:
-        return None, None
+        return math.inf, math.inf
+
     mean = sum(xs) / n
     if n < 2:
         return mean, 0.0
+
     var = sum((x - mean) ** 2 for x in xs) / (n - 1)
     return mean, math.sqrt(var)
 
@@ -279,20 +281,20 @@ class PlotAxis(abc.ABC):
     @abc.abstractmethod
     def key(self, cfg: Dict[str, Any], all_cfgs: Sequence[Dict[str, Any]]) -> str:
         """
-        Bucket of cfg. Two cfgs in the same bucket are identified together along columns, rows, or both.
+        Bucket of cfg. Two cfgs in the same bucket are identified together along this axis.
         """
 
     def key_order(self, idx: str):
         """
-        Custom sort order for cfg buckets. This changes the order they are listed in the printed output.
+        Customizable display order for cfg buckets.
         """
         return idx
 
     def section(self, all_cfgs: Sequence[Dict[str, Any]]) -> Optional[str]:
         """
-        Extra section to add in the printed output. Useful to show how the bucket ids map to numerical config values.
-        For example, buckets for a noise level axis may not have a consistent associated standard deviation.
-        Certain methods need a larger noise scale than others to obtain a similar effect on the plot.
+        Extra section to add in the printed output. Useful to show which bucket map to which numerical config values.
+        For example, certain covariance modes need a larger noise scale than others to obtain a similar effect on the plot.
+            We can override this method to print a section that show the mapping for each covariance mode.
         """
         return None
 
@@ -306,10 +308,10 @@ class FieldAxis(PlotAxis):
         return self.axis_name or self.field
 
     def key(self, cfg: Dict[str, Any], all_cfgs: Sequence[Dict[str, Any]]) -> str:
-        x = cfg.get(self.field, None)
-        if x is None:
+        value = cfg.get(self.field)
+        if value is None:
             raise KeyError(f"missing cfg[{self.field!r}]")
-        return str(x)
+        return str(value)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -323,7 +325,7 @@ class NoiseLevelAxis(PlotAxis):
         return self.axis_name
 
     def key(self, cfg: Dict[str, Any], all_cfgs: Sequence[Dict[str, Any]]) -> str:
-        sigma = cfg.get(self.sigma_field, None)
+        sigma = cfg.get(self.sigma_field)
         if sigma is None:
             return "none"
 
@@ -355,9 +357,9 @@ class NoiseLevelAxis(PlotAxis):
         sigmas = []
 
         for c in all_cfgs:
-            if c.get(self.covariance_mode_field, None) != covariance_mode:
+            if c.get(self.covariance_mode_field) != covariance_mode:
                 continue
-            v = c.get(self.sigma_field, None)
+            v = c.get(self.sigma_field)
             if v is None:
                 continue
             sigmas.append(float(v))
