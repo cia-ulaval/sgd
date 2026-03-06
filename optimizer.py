@@ -1,4 +1,3 @@
-from sympy import symbols, diff
 import tensorflow as tf
 class Optimizer:
     def __init__(self, weigths):
@@ -9,6 +8,13 @@ class Optimizer:
                 tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred)
             )
         grads = tape.gradient(loss, [y_pred])
+
+
+
+
+
+
+
 
 
 
