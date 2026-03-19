@@ -8,16 +8,15 @@ class ZeroOneLoss(torch.nn.Module):
 
 
 @torch.no_grad()
-def compute_01_loss(model, training_loader, validation_loader, test_loader):
+def compute_01_loss(model, training_loader, validation_loader, test_loader, device):
     avg_train_loss = 0.0
     avg_valid_loss = 0.0
     avg_test_loss = 0.0
     zo_loss = ZeroOneLoss()
 
     for i, (inputs, labels) in enumerate(training_loader, start=1):
-        if torch.cuda.is_available():
-            inputs = inputs.cuda()
-            labels = labels.cuda()
+        inputs = inputs.to(device)
+        labels = labels.to(device)
         outputs = model(inputs)
         loss = zo_loss(outputs, labels)
 
@@ -25,9 +24,8 @@ def compute_01_loss(model, training_loader, validation_loader, test_loader):
         avg_train_loss = (1-ratio)*avg_train_loss + ratio*loss
 
     for i, (inputs, labels) in enumerate(validation_loader, start=1):
-        if torch.cuda.is_available():
-            inputs = inputs.cuda()
-            labels = labels.cuda()
+        inputs = inputs.to(device)
+        labels = labels.to(device)
         outputs = model(inputs)
         loss = zo_loss(outputs, labels)
 
@@ -35,9 +33,8 @@ def compute_01_loss(model, training_loader, validation_loader, test_loader):
         avg_valid_loss = (1-ratio)*avg_valid_loss + ratio*loss
 
     for i, (inputs, labels) in enumerate(test_loader, start=1):
-        if torch.cuda.is_available():
-            inputs = inputs.cuda()
-            labels = labels.cuda()
+        inputs = inputs.to(device)
+        labels = labels.to(device)
         outputs = model(inputs)
         loss = zo_loss(outputs, labels)
 

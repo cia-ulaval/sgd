@@ -1,11 +1,10 @@
 import torch
 
 
-def train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, num_noise_samples_batch=1, num_noise_samples_accumulation=1):
+def train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, num_noise_samples_batch=1, num_noise_samples_accumulation=1, device="cpu"):
     for inputs, labels in training_loader:
-        if torch.cuda.is_available():
-            inputs = inputs.cuda()
-            labels = labels.cuda()
+        inputs = inputs.to(device)
+        labels = labels.to(device)
 
         optimizer.zero_grad()
 

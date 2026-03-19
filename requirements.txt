@@ -5,3 +5,4 @@ wandb~=0.22.2
 tensorboard~=2.20.0
 tqdm~=4.67.1
 matplotlib~=3.10.7
+optuna~=4.8.0

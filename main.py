@@ -1,13 +1,12 @@
 import contextlib
 import pathlib
 from typing import Generator, Optional, Tuple
-
+import math
 import torch
 import json
 from torch.utils.tensorboard import SummaryWriter
-from src.ablation import print_results_table
 from src.noise import NoiseHook
-from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler, TrainValidDiffNoiseScheduler
+from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler, TrainValidDiffNoiseScheduler, TrainValidDiffStaticPidNoiseScheduler
 from src.utils import create_run_name
 from src.data import dataset_creator
 from src.loss_function import compute_01_loss
@@ -36,7 +35,16 @@ NOISE_SCHEDULER_FACTORIES = {
     None: lambda *_args: None,
     "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
     "partial": lambda total_steps, cfg: PartialNoiseScheduler(total_steps, cfg.get('noise_scheduler_start_step_ratio', 0.0), cfg.get('noise_scheduler_end_step_ratio', 1.0)),
-    "train_valid_differential": lambda total_steps, cfg: TrainValidDiffNoiseScheduler(cfg.get("noise_scheduler_gamma")),
+    "train_valid_differential": lambda total_steps, cfg: TrainValidDiffNoiseScheduler(cfg.get("noise_scheduler_gamma", 1.0)),
+    "train_valid_pid": lambda total_steps, cfg: TrainValidDiffStaticPidNoiseScheduler(
+        a_bounds=cfg.get("noise_scheduler_a_bounds", (-10, 10)),
+        b_bounds=cfg.get("noise_scheduler_b_bounds", (-10, 10)),
+        c_bounds=cfg.get("noise_scheduler_c_bounds", (-10, 10)),
+        sigma_bounds=cfg.get("noise_scheduler_sigma_bounds", (-10, 10)),
+        n_startup_trials=cfg.get("noise_scheduler_n_startup_trials", 10),
+        seed=cfg["seed"],
+        log_dir=cfg["log_dir"],
+    ),
 }
 
 
@@ -63,8 +71,6 @@ def ablate_covariance_modes():
                 config_specific["covariance_mode"] = covariance_mode
                 config_specific["noise_std"] = sigma
                 do_one_run(config_specific)
-
-    print_results_table(logdir)
 
 
 def ablate_num_samples():
@@ -100,8 +106,6 @@ def ablate_num_samples():
                 config_specific["noise_std"] = base_noise_std * noise_std_l5_scale
                 do_one_run(config_specific)
 
-    print_results_table(logdir)
-
 
 def ablate_train_valid_differential():
     logdir = pathlib.Path("./logs_ablation_train_valid_differential")
@@ -118,15 +122,44 @@ def ablate_train_valid_differential():
         config_seed = config.copy()
         config_seed["seed"] = seed
 
-        for sigma in (None, *sigmas(base_noise_std, noise_std_levels)):
+        for sigma in reversed((None, *geometric_range(0.01, 0.08, 8))):
             config_specific = config_seed.copy()
             config_specific["noise_std"] = sigma
             if sigma is not None:
-                for gamma in (0.0, sigmas(1.0, 7)):
+                for gamma in reversed((0.0, *geometric_range(1.0, 8.0, 8))):
                     config_specific["noise_scheduler"] = "train_valid_differential"
                     config_specific["noise_scheduler_gamma"] = gamma
+                    do_one_run(config_specific)
+            else:
+                do_one_run(config_specific)
 
-            do_one_run(config_specific)
+    print_results_table(logdir)
+
+
+def ablate_train_valid_diff_pid():
+    logdir = pathlib.Path("./logs_ablation_train_valid_diff_pid")
+    config = create_base_config(logdir)
+
+    num_iterations = 100
+    config["num_noise_samples_batch"] = 1
+    config["num_noise_samples_accumulation"] = 1
+    config["covariance_mode"] = "isotropic"
+    num_seeds = 5
+
+    for seed in seeds(num_seeds):
+        for _ in range(num_iterations):
+            config_seed = config.copy()
+            config_seed["seed"] = seed
+
+            config_scheduler = config_seed.copy()
+            config_scheduler["noise_scheduler"] = "train_valid_pid"
+            config_scheduler["noise_scheduler_a_bounds"] = (-10, 10)
+            config_scheduler["noise_scheduler_b_bounds"] = (-10, 10)
+            config_scheduler["noise_scheduler_c_bounds"] = (-10, 10)
+            config_scheduler["noise_scheduler_sigma_bounds"] = (-10, 10)
+            config_scheduler["noise_scheduler_n_startup_trials"] = 10
+            config_scheduler["num_iterations"] = num_iterations
+            do_one_run(config_scheduler)
 
     print_results_table(logdir)
 
@@ -145,6 +178,7 @@ def create_base_config(log_dir: pathlib.Path):
         # 'noise_scheduler_end_step_ratio': 1.0,
         'n_epochs': 120,
         'lr': 5e-4,
+        'batch_size': 512,
         'log_dir': log_dir,
     }
 
@@ -154,12 +188,23 @@ def seeds(num_seeds: int, base_seed: int = 20250729) -> Generator[int, None, Non
         yield base_seed + i
 
 
-def sigmas(base_noise: float, noise_levels: int) -> Generator[float, None, None]:
+def sigmas(base_noise: float, noise_levels: int, base: float = 2.0) -> Generator[float, None, None]:
     # sigma scaling factors follow a geometric series
     noise_std_scale_down_levels = 3
     for noise_std_scale_up_levels in range(noise_levels):
-        sigma = base_noise * 2**(noise_std_scale_up_levels - noise_std_scale_down_levels)
+        sigma = base_noise * base**(noise_std_scale_up_levels - noise_std_scale_down_levels)
         yield sigma
+
+
+def geometric_range(min: float, max: float, steps: int):
+    min_log = math.log(min)
+    max_log = math.log(max)
+    last_i = steps - 1
+    delta_log = max_log - min_log
+    for i in range(steps):
+        current_ratio = i / last_i
+        current_log = min_log + delta_log * current_ratio
+        yield math.exp(current_log)
 
 
 def covariance_modes() -> Generator[Tuple[str, Optional[float]], None, None]:
@@ -178,9 +223,14 @@ def do_one_run(cfg):
     writer = SummaryWriter(str(run_dir))
     best_loss_path = run_dir / "best_loss.json"
 
+    if torch.cuda.is_available:
+        device = "cuda:1"
+    else:
+        device = "cpu"
+
     print("\nStandard training loop initialized.\n")
 
-    training_loader, validation_loader, test_loader, classes = dataset_creator()
+    training_loader, validation_loader, test_loader, classes = dataset_creator(batch_size=cfg["batch_size"])
     model = GarmentClassifier()
     loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -190,20 +240,20 @@ def do_one_run(cfg):
     total_steps = len(training_loader) * cfg['n_epochs']
     noise_hook, noise_scheduler = get_noise_hook(model, optimizer, total_steps, cfg)
 
-    if torch.cuda.is_available():
-        model = model.cuda()
+    model = model.to(device)
 
     best_valid_loss = torch.inf
 
     for epoch in trange(cfg['n_epochs']):
         with noise_hook, optimizer_hook:
             model.train()
-            train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, cfg['num_noise_samples_batch'], cfg['num_noise_samples_accumulation'])
+            train_one_epoch(training_loader, optimizer, noise_scheduler, model, loss_fn, cfg['num_noise_samples_batch'], cfg['num_noise_samples_accumulation'], device)
 
         model.eval()
-        avg_train_loss, avg_valid_loss, avg_test_loss = compute_01_loss(model, training_loader, validation_loader, test_loader)
+        avg_train_loss, avg_valid_loss, avg_test_loss = compute_01_loss(model, training_loader, validation_loader, test_loader, device)
         if noise_scheduler is not None:
             noise_scheduler.update_from_losses(avg_train_loss.item(), avg_valid_loss.item())
+            writer.add_scalar('scheduler/scale', noise_scheduler.get_noise_scalar(), epoch)
 
         if avg_valid_loss < best_valid_loss:
             best_valid_loss = avg_valid_loss
@@ -220,6 +270,9 @@ def do_one_run(cfg):
         writer.add_scalar('loss_01/valid', avg_valid_loss.item(), epoch)
         writer.add_scalar('loss_01/test', avg_test_loss.item(), epoch)
 
+    if noise_scheduler is not None:
+        noise_scheduler.update_from_run(best_valid_loss.item())
+
     writer.close()
     print("\nTraining finished.")
 
@@ -233,11 +286,13 @@ def get_optimizer_hook(optimizer, cfg):
 
 def get_noise_hook(model, optimizer, total_steps, cfg):
     noise_hook = contextlib.nullcontext()
-    noise_scheduler = None
+    noise_scheduler = get_noise_scheduler(total_steps, cfg)
+
+    if noise_scheduler is not None:
+        noise_scheduler.amend_config(cfg)
 
     if cfg['noise_std'] is not None:
         var_provider = get_var_provider(optimizer, cfg)
-        noise_scheduler = get_noise_scheduler(total_steps, cfg)
         noise_hook = NoiseHook(model, var_provider, noise_scheduler)
 
     return noise_hook, noise_scheduler
@@ -279,4 +334,4 @@ def to_jsonable(cfg):
 
 
 if __name__ == '__main__':
-    ablate_train_valid_differential()
+    ablate_train_valid_diff_pid()
