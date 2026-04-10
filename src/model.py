@@ -2,6 +2,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class AGNewsMLP(nn.Module):
+    def __init__(self, input_dim=10000):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, 1024)
+        self.bn1 = nn.BatchNorm1d(1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.fc3 = nn.Linear(512, 256)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.fc4 = nn.Linear(256, 4)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.fc1(x)))
+        x = F.relu(self.bn2(self.fc2(x)))
+        x = F.relu(self.bn3(self.fc3(x)))
+        return self.fc4(x)
+
+
 class SmallerGarmentClassifier(nn.Module):
     def __init__(self):
         super().__init__()

@@ -9,7 +9,7 @@ from src.ablation import print_results_table
 from src.noise import NoiseHook
 from src.noise_scheduler import PartialNoiseScheduler, LinearNoiseScheduler
 from src.utils import create_run_name
-from src.data import dataset_creator
+from src.data import ag_news_dataset_creator, dataset_creator
 from src.loss_function import compute_01_loss
 from src.model import *
 from src.seed import set_seed
@@ -37,6 +37,33 @@ NOISE_SCHEDULER_FACTORIES = {
     "linear": lambda total_steps, cfg: LinearNoiseScheduler(total_steps),
     "partial": lambda total_steps, cfg: PartialNoiseScheduler(total_steps, cfg.get('noise_scheduler_start_step_ratio', 0.0), cfg.get('noise_scheduler_end_step_ratio', 1.0)),
 }
+
+
+def ablate_ag_news():
+    logdir = pathlib.Path("./logs_ablation_ag_news")
+    config = create_ag_news_config(logdir)
+
+    num_seeds = 5
+    noise_std_levels = 7
+
+    for seed in seeds(num_seeds):
+        config_seed = config.copy()
+        config_seed["seed"] = seed
+        for covariance_mode, base_noise_std in covariance_modes():
+            if base_noise_std is None:
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = None
+                do_one_run(config_specific)
+                continue
+
+            for sigma in sigmas(base_noise_std, noise_std_levels):
+                config_specific = config_seed.copy()
+                config_specific["covariance_mode"] = covariance_mode
+                config_specific["noise_std"] = sigma
+                do_one_run(config_specific)
+
+    print_results_table(logdir)
 
 
 def ablate_covariance_modes():
@@ -120,6 +147,24 @@ def create_base_config(log_dir: pathlib.Path):
     }
 
 
+def create_ag_news_config(log_dir: pathlib.Path):
+    return {
+        'project_name': 'SSGD',
+        'seed': 20250729,
+        'dataset': 'AGNews',
+        'data_path': pathlib.Path('datasets/ag_news'),
+        'tfidf_max_features': 10000,
+        'noise_std': None,
+        'num_noise_samples_batch': 4,
+        'num_noise_samples_accumulation': 2,
+        'covariance_mode': "bineta",
+        'noise_scheduler': None,
+        'n_epochs': 20,
+        'lr': 5e-4,
+        'log_dir': log_dir,
+    }
+
+
 def seeds(num_seeds: int, base_seed: int = 20250729) -> Generator[int, None, None]:
     for i in range(num_seeds):
         yield base_seed + i
@@ -151,8 +196,17 @@ def do_one_run(cfg):
 
     print("\nStandard training loop initialized.\n")
 
-    training_loader, validation_loader, test_loader, classes = dataset_creator()
-    model = GarmentClassifier()
+    if cfg['dataset'] == 'AGNews':
+        max_features = cfg.get('tfidf_max_features', 10000)
+        training_loader, validation_loader, test_loader, classes = ag_news_dataset_creator(
+            data_path=cfg['data_path'],
+            batch_size=cfg.get('batch_size', 512),
+            max_features=max_features,
+        )
+        model = AGNewsMLP(input_dim=max_features)
+    else:
+        training_loader, validation_loader, test_loader, classes = dataset_creator()
+        model = GarmentClassifier()
     loss_fn = torch.nn.CrossEntropyLoss()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
@@ -248,4 +302,4 @@ def to_jsonable(cfg):
 
 
 if __name__ == '__main__':
-    ablate_num_samples()
+    ablate_ag_news()
